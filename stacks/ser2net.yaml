@@ -5,8 +5,7 @@ services:
     container_name: ser2net
     image: ghcr.io/jippi/docker-ser2net:4.6.3
     restart: unless-stopped
-    ports:
-      - 20100:20100/tcp
+    network_mode: host
     configs:
       - source: ser2net.yaml
         target: /etc/ser2net/ser2net.yaml
