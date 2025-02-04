@@ -17,24 +17,11 @@ configs:
     content: |
       %YAML 1.1
       ---
-       default: &local
-        name: local
-        value: true
-        class: serialdev
-
-      default: &mdns
-        name: mdns
-        value: true
-
-      default: &mdns_sysattrs
-        name: mdns-sysattrs
-        value: true
-        
       connection: &zwave
         accepter: tcp,20100
         enable: on
         options:
           kickolduser: true
-          mdns: true
+          mdns: false
           mdns-type: "_zwave._tcp"
         connector: serialdev,/dev/serial/by-id/usb-Zooz_800_Z-Wave_Stick_533D004242-if00,115200N81,nobreak,local
