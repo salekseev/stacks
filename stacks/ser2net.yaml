@@ -1,0 +1,30 @@
+# $schema: https://raw.githubusercontent.com/compose-spec/compose-spec/refs/heads/main/schema/compose-spec.json
+
+services:
+  ser2net:
+    container_name: ser2net
+    image: ghcr.io/jippi/docker-ser2net:4.6.3
+    restart: unless-stopped
+    ports:
+      - 20100:20100/tcp
+    volumes:
+      - ./ser2net.yaml:/etc/ser2net/ser2net.yaml
+    configs:
+      - source: ser2net
+        target: /etc/ser2net/ser2net.yaml
+    devices:
+      - /dev/serial/by-id/usb-Zooz_800_Z-Wave_Stick_533D004242-if00
+
+configs:
+  ser2net:
+    content: |
+      %YAML 1.1
+      ---
+      connection: &my-zwave
+        accepter: tcp,20100
+        enable: on
+        options:
+          kickolduser: true
+          mdns: true
+          mdns-type: "_zwave._tcp"
+        connector: serialdev,/dev/serial/by-id/usb-Zooz_800_Z-Wave_Stick_533D004242-if00,115200N81,nobreak,local
