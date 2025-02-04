@@ -22,6 +22,6 @@ configs:
         enable: on
         options:
           kickolduser: true
-          mdns: false
+          mdns: true
           mdns-type: "_zwave._tcp"
         connector: serialdev,/dev/serial/by-id/usb-Zooz_800_Z-Wave_Stick_533D004242-if00,115200N81,nobreak,local
