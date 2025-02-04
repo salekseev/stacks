@@ -17,7 +17,20 @@ configs:
     content: |
       %YAML 1.1
       ---
-      connection: &my-zwave
+       default: &local
+        name: local
+        value: true
+        class: serialdev
+
+      default: &mdns
+        name: mdns
+        value: true
+
+      default: &mdns_sysattrs
+        name: mdns-sysattrs
+        value: true
+        
+      connection: &zwave
         accepter: tcp,20100
         enable: on
         options:
