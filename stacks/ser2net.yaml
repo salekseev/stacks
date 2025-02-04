@@ -7,16 +7,14 @@ services:
     restart: unless-stopped
     ports:
       - 20100:20100/tcp
-    volumes:
-      - ./ser2net.yaml:/etc/ser2net/ser2net.yaml
     configs:
-      - source: ser2net
+      - source: ser2net.yaml
         target: /etc/ser2net/ser2net.yaml
     devices:
       - /dev/serial/by-id/usb-Zooz_800_Z-Wave_Stick_533D004242-if00
 
 configs:
-  ser2net:
+  ser2net.yaml:
     content: |
       %YAML 1.1
       ---
