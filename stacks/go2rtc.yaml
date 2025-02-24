@@ -1,0 +1,36 @@
+services:
+  go2rtc:
+    image: ghcr.io/alexxit/go2rtc:1.9.8-hardware
+    container_name: go2rtc
+    runtime: nvidia
+    volumes:
+      - /mnt/spool/apps/go2rtc:/config
+    restart: unless-stopped
+    deploy:
+     resources:
+       reservations:
+         devices:
+           - driver: nvidia
+             count: 1
+             capabilities: [gpu]
+    networks:
+      go2rtc-ipvlan:
+        ipv4_address: 192.168.1.9
+    ports:
+      - 1984/tcp
+      - 5353/udp
+      - 8554/tcp
+      - 8555/tcp
+      - 8555/udp
+
+networks:
+  go2rtc-ipvlan:
+    driver: ipvlan
+    driver_opts:
+        parent: enp4s0f0np0
+        ipvlan_mode: l2
+    ipam:
+        config:
+            - subnet: 192.168.1.0/24
+              gateway: 192.168.1.1
+              ip_range: 192.168.1.9/32
