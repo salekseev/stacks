@@ -29,7 +29,7 @@ services:
 
             # Default volume for the Scrypted database. Typically should not be changed.
             # The volume will be placed relative to this docker-compose.yml.
-            - /mnt/spool/apps/scrypted:/server/volume
+            - /mnt/spool/apps/config/scrypted:/server/volume
 
 
         # Uncomment the following lines to use Avahi daemon from the host

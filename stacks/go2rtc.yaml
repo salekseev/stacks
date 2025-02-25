@@ -4,7 +4,7 @@ services:
     container_name: go2rtc
     runtime: nvidia
     volumes:
-      - /mnt/spool/apps/go2rtc:/config
+      - /mnt/spool/apps/config/go2rtc:/config
     restart: unless-stopped
     deploy:
      resources:
