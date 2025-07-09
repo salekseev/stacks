@@ -1,9 +1,9 @@
 version: 2
 updates:
-  - package-ecosystem: "docker"
+  - package-ecosystem: "docker-compose"
     directory: "/stacks"
     schedule:
-      interval: "weekly"
+      interval: "daily"
     labels:
       - "dependencies"
       - "docker"
