@@ -1,0 +1,49 @@
+# $schema: https://raw.githubusercontent.com/compose-spec/compose-spec/refs/heads/main/schema/compose-spec.json
+
+services:
+
+  changedetection:
+    restart: unless-stopped
+    image: ghcr.io/dgtlmoon/changedetection.io:0.50.5
+    container_name: changedetection
+    hostname: changedetection
+    volumes:
+      - changedetection-data:/datastore
+    # Configurable proxy list support, see https://github.com/dgtlmoon/changedetection.io/wiki/Proxy-configuration#proxy-list-support
+    #        - ./proxies.json:/datastore/proxies.json
+    environment:
+      # Log output levels: TRACE, DEBUG(default), INFO, SUCCESS, WARNING, ERROR, CRITICAL
+      # - LOGGER_LEVEL=TRACE
+      - PLAYWRIGHT_DRIVER_URL=ws://browser-sockpuppet-chrome:3000
+      - BASE_URL=https://changedetection.alekseev.us
+      - HIDE_REFERER=true
+      - FETCH_WORKERS=10
+      - MINIMUM_SECONDS_RECHECK_TIME=3
+      - ALLOW_FILE_URI=False
+      - TZ=America/New_York
+    ports:
+      - 5000:5000/tcp
+    depends_on:
+      browser-sockpuppet-chrome:
+        condition: service_started
+
+
+  browser-sockpuppet-chrome:
+    hostname: browser-sockpuppet-chrome
+    image: dgtlmoon/sockpuppetbrowser:latest
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - seccomp:./chrome.json
+    restart: unless-stopped
+    environment:
+      - SCREEN_WIDTH=1920
+      - SCREEN_HEIGHT=1024
+      - SCREEN_DEPTH=16
+      - MAX_CONCURRENT_CHROME_PROCESSES=10
+    ports:
+      - 3000
+      - 8080
+
+volumes:
+  changedetection-data:
