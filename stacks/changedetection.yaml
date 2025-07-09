@@ -14,7 +14,7 @@ services:
     environment:
       # Log output levels: TRACE, DEBUG(default), INFO, SUCCESS, WARNING, ERROR, CRITICAL
       # - LOGGER_LEVEL=TRACE
-      - PLAYWRIGHT_DRIVER_URL=ws://browser-sockpuppet-chrome:3000
+      - PLAYWRIGHT_DRIVER_URL=ws://playwright-chrome:3000
       - BASE_URL=https://changedetection.alekseev.us
       - HIDE_REFERER=true
       - FETCH_WORKERS=10
@@ -24,26 +24,51 @@ services:
     ports:
       - 5000:5000/tcp
     depends_on:
-      browser-sockpuppet-chrome:
+      playwright-chrome:
         condition: service_started
 
 
-  browser-sockpuppet-chrome:
-    hostname: browser-sockpuppet-chrome
-    image: dgtlmoon/sockpuppetbrowser:latest
+  # browser-sockpuppet-chrome:
+  #   hostname: browser-sockpuppet-chrome
+  #   image: dgtlmoon/sockpuppetbrowser:latest
+  #   cap_add:
+  #     - SYS_ADMIN
+  #   security_opt:
+  #     - seccomp:./chrome.json
+  #   restart: unless-stopped
+  #   environment:
+  #     - SCREEN_WIDTH=1920
+  #     - SCREEN_HEIGHT=1024
+  #     - SCREEN_DEPTH=16
+  #     - MAX_CONCURRENT_CHROME_PROCESSES=10
+  #   ports:
+  #     - 3000
+  #     - 8080
+
+  playwright-chrome:
+    hostname: playwright-chrome
+    container_name: playwright-chrome
+    image: ghcr.io/browserless/chromium:v2.32.1
+    restart: on-failure:5
     cap_add:
       - SYS_ADMIN
     security_opt:
       - seccomp:./chrome.json
-    restart: unless-stopped
     environment:
-      - SCREEN_WIDTH=1920
-      - SCREEN_HEIGHT=1024
-      - SCREEN_DEPTH=16
-      - MAX_CONCURRENT_CHROME_PROCESSES=10
-    ports:
-      - 3000
-      - 8080
+    - TZ=America/New_York
+    - SCREEN_WIDTH=1920
+    - SCREEN_HEIGHT=1024
+    - SCREEN_DEPTH=16
+    - ENABLE_DEBUGGER=false
+    - TIMEOUT=300000 #300 seconds
+    - CONCURRENT=5
+    - QUEUED=5
+    - ignoreHTTPSErrors=true
+    - DEFAULT_STEALTH=true
+    - FUNCTION_ENABLE_INCOGNITO_MODE=true
+    - KEEP_ALIVE=true
+    - PREBOOT_CHROME=true
+    - EXIT_ON_HEALTH_FAILURE=true
 
 volumes:
   changedetection-data:
