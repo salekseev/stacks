@@ -29,6 +29,8 @@ services:
       #- /mnt/music:/mnt/music
       #- /mnt/transcode:/mnt/transcode
       - /mnt/dpool/media:/media
+      # RAM-based transcoding using shared memory
+      - /dev/shm:/transcode
     restart: unless-stopped
     deploy:
      resources:
