@@ -1,0 +1,139 @@
+
+
+services:
+  sonarr:
+    image: hotio/sonarr:4.0.15.2941
+    container_name: sonarr
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - /mnt/spool/apps/config/sonarr:/config
+      - /mnt/dpool/media:/media
+    ports:
+      - 8989:8989
+    restart: unless-stopped
+    networks:
+      - starr_media_network
+
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: radarr
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - /mnt/spool/apps/config/radarr:/config
+      - /mnt/dpool/media:/media
+    ports:
+      - 7878:7878
+    restart: unless-stopped
+    networks:
+      - starr_media_network
+
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:latest
+    container_name: prowlarr
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - /mnt/spool/apps/config/prowlarr:/config
+    ports:
+      - 9696:9696
+    restart: unless-stopped
+    networks:
+      - starr_media_network
+
+  sabnzbd:
+    image: lscr.io/linuxserver/sabnzbd:latest
+    container_name: sabnzbd
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - /mnt/spool/apps/config/sabnzbd:/config
+      - /mnt/dpool/media/usenet:/downloads
+    ports:
+      - 8080:8080
+    restart: unless-stopped
+    networks:
+      - starr_media_network
+
+  qbittorrent:
+    image: ghcr.io/hotio/qbittorrent:4.6.7
+    container_name: qbittorrent
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - WEBUI_PORT=8081
+    volumes:
+      - /mnt/spool/apps/config/qbittorrent:/config
+      - /mnt/dpool/media/torrents:/downloads
+    ports:
+      - 8081:8081
+      - 6881:6881
+      - 6881:6881/udp
+    restart: unless-stopped
+    networks:
+      - starr_media_network
+
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:v3.4.0
+    container_name: flaresolverr
+    environment:
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - TZ=${TZ}
+    volumes:
+      - /mnt/spool/apps/config/flaresolverr:/config
+    ports:
+      - 8191:8191
+    restart: unless-stopped
+    networks:
+      - starr_media_network
+
+  unpackerr:
+    image: lscr.io/linuxserver/unpackerr:latest
+    container_name: unpackerr
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - UN_SONARR_URL=http://sonarr:8989
+      - UN_RADARR_URL=http://radarr:7878
+    volumes:
+      - /mnt/spool/apps/config/unpackerr:/config
+      - /mnt/dpool/media:/media
+    restart: unless-stopped
+    networks:
+      - starr_media_network
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    volumes:
+      - /mnt/spool/apps/config/cloudflared:/config
+    restart: unless-stopped
+    networks:
+      - starr_media_network
+
+  recyclarr:
+    image: ghcr.io/recyclarr/recyclarr:v7.4.1
+    container_name: recyclarr
+    environment:
+      - TZ=${TZ}
+    volumes:
+      - /mnt/spool/apps/config/recyclarr:/config
+    restart: unless-stopped
+    networks:
+      - starr_media_network
+
+networks:
+  starr_media_network:
+    driver: bridge

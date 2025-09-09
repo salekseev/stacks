@@ -22,7 +22,7 @@ fi
 
 # Validate the stack file
 echo "Validating ${STACK_FILE}..."
-if docker-compose -f "${STACK_FILE}" config > /dev/null; then
+if docker compose -f "${STACK_FILE}" --env-file stacks/stack.env config > /dev/null; then
   echo "Validation successful for ${STACK_FILE}"
 else
   echo "Validation failed for ${STACK_FILE}"
