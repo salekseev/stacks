@@ -12,6 +12,8 @@ services:
     volumes:
       - /mnt/spool/apps/config/sonarr:/config
       - /mnt/dpool/media:/media
+    expose:
+      - "8989"
     depends_on:
       - sabnzbd
       - qbittorrent
@@ -30,6 +32,8 @@ services:
     volumes:
       - /mnt/spool/apps/config/radarr:/config
       - /mnt/dpool/media:/media
+    expose:
+      - "7878"
     depends_on:
       - sabnzbd
       - qbittorrent
@@ -48,6 +52,8 @@ services:
     volumes:
       - /mnt/spool/apps/config/prowlarr:/config
       - /mnt/dpool/media:/media
+    expose:
+      - "9696"
     depends_on:
       - flaresolverr
     networks:
@@ -65,6 +71,8 @@ services:
       - /mnt/spool/apps/config/sabnzbd:/config
       - /mnt/dpool/media:/media
       - /mnt/dpool/media/downloads/usenet:/downloads
+    expose:
+      - "8080"
     networks:
       - starr_net
 
@@ -80,6 +88,8 @@ services:
       - /mnt/spool/apps/config/qbittorrent:/config
       - /mnt/dpool/media:/media
       - /mnt/dpool/media/downloads/torrents:/downloads
+    expose:
+      - "8080"
     networks:
       - starr_net
 
@@ -89,6 +99,8 @@ services:
     restart: unless-stopped
     environment:
       - TZ=${TZ}
+    expose:
+      - "8191"
     networks:
       - starr_net
 
