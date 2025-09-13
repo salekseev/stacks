@@ -1,0 +1,138 @@
+# $schema: https://raw.githubusercontent.com/compose-spec/compose-spec/refs/heads/main/schema/compose-spec.json
+
+services:
+  sonarr:
+    image: ghcr.io/hotio/sonarr:4.0.7
+    container_name: sonarr
+    restart: unless-stopped
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - /mnt/spool/apps/config/sonarr:/config
+      - /mnt/dpool/media:/media
+    depends_on:
+      - sabnzbd
+      - qbittorrent
+      - prowlarr
+    networks:
+      - starr_net
+
+  radarr:
+    image: ghcr.io/hotio/radarr:5.8.3
+    container_name: radarr
+    restart: unless-stopped
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - /mnt/spool/apps/config/radarr:/config
+      - /mnt/dpool/media:/media
+    depends_on:
+      - sabnzbd
+      - qbittorrent
+      - prowlarr
+    networks:
+      - starr_net
+
+  prowlarr:
+    image: ghcr.io/hotio/prowlarr:1.28.2
+    container_name: prowlarr
+    restart: unless-stopped
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - /mnt/spool/apps/config/prowlarr:/config
+      - /mnt/dpool/media:/media
+    depends_on:
+      - flaresolverr
+    networks:
+      - starr_net
+
+  sabnzbd:
+    image: ghcr.io/hotio/sabnzbd:4.3.3
+    container_name: sabnzbd
+    restart: unless-stopped
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - /mnt/spool/apps/config/sabnzbd:/config
+      - /mnt/dpool/media:/media
+      - /mnt/dpool/media/downloads/usenet:/downloads
+    networks:
+      - starr_net
+
+  qbittorrent:
+    image: ghcr.io/hotio/qbittorrent:4.6.7
+    container_name: qbittorrent
+    restart: unless-stopped
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - /mnt/spool/apps/config/qbittorrent:/config
+      - /mnt/dpool/media:/media
+      - /mnt/dpool/media/downloads/torrents:/downloads
+    networks:
+      - starr_net
+
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:v3.3.21
+    container_name: flaresolverr
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ}
+    networks:
+      - starr_net
+
+  unpackerr:
+    image: ghcr.io/hotio/unpackerr:0.14.10
+    container_name: unpackerr
+    restart: unless-stopped
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      # UN_* variables are referenced from stacks/stack.env (keys only)
+      - UN_SONARR_0_URL=${UN_SONARR_0_URL}
+      - UN_SONARR_0_API_KEY=${UN_SONARR_0_API_KEY}
+      - UN_RADARR_0_URL=${UN_RADARR_0_URL}
+      - UN_RADARR_0_API_KEY=${UN_RADARR_0_API_KEY}
+    volumes:
+      - /mnt/spool/apps/config/unpackerr:/config
+      - /mnt/dpool/media:/media
+      - /mnt/dpool/media/downloads:/downloads
+    depends_on:
+      - sonarr
+      - radarr
+      - sabnzbd
+      - qbittorrent
+    networks:
+      - starr_net
+
+  recyclarr:
+    image: ghcr.io/recyclarr/recyclarr:7.3.1
+    container_name: recyclarr
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ}
+    volumes:
+      - /mnt/spool/apps/config/recyclarr:/config
+    depends_on:
+      - sonarr
+      - radarr
+      - prowlarr
+    networks:
+      - starr_net
+
+networks:
+  starr_net:
+    name: starr_net
+
