@@ -88,8 +88,9 @@ services:
       - /mnt/spool/apps/config/qbittorrent:/config
       - /mnt/dpool/media:/media
       - /mnt/dpool/media/downloads/torrents:/downloads
+    expose:
+      - "8080"
     ports:
-      - 8080:8080
       - 6881:6881/tcp
       - 6881:6881/udp
     networks:
