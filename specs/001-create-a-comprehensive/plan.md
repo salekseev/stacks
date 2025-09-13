@@ -30,7 +30,7 @@
 - Phase 3-4: Implementation execution (manual or via tools)
 
 ## Summary
-Deliver a single Docker Compose stack `stacks/starr.yaml` that orchestrates Sonarr, Radarr, Prowlarr, Sabnzbd, qBittorrent, Flaresolverr, Unpackerr, and Recyclarr on a dedicated `starr_net` network. All environment variables are centralized in `stacks/stack.env`. Images are sourced from `ghcr.io` and `hotio.dev` (when available) and pinned to semantic versions. Shared host paths mirror `plex` conventions: media at `/mnt/dpool/media` and configs under `/mnt/spool/apps/config/*`. Remote access is provided via Cloudflare Tunnel, avoiding host port exposure.
+Deliver a single Docker Compose stack `stacks/starr.yaml` that orchestrates Sonarr, Radarr, Prowlarr, Sabnzbd, qBittorrent, Flaresolverr, Unpackerr, and Recyclarr on a dedicated `starr_net` network. All environment variables are centralized in `stacks/stack.env`. For the Starr applications, prefer the official LinuxServer.io images (`lscr.io/linuxserver/sonarr`, `lscr.io/linuxserver/radarr`, `lscr.io/linuxserver/prowlarr`) and pin to semantic tags via env variables. For other components, prefer official GHCR images. Shared host paths mirror `plex` conventions: media at `/mnt/dpool/media` and configs under `/mnt/spool/apps/config/*`. Remote access is provided via Cloudflare Tunnel, avoiding host port exposure.
 
 ## Technical Context
 **Language/Version**: Docker Compose (Compose Spec), Linux host  

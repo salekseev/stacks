@@ -2,7 +2,7 @@
 
 services:
   sonarr:
-    image: ghcr.io/hotio/sonarr:4.0.7
+    image: lscr.io/linuxserver/sonarr:${SONARR_IMAGE_TAG}
     container_name: sonarr
     restart: unless-stopped
     environment:
@@ -20,7 +20,7 @@ services:
       - starr_net
 
   radarr:
-    image: ghcr.io/hotio/radarr:5.8.3
+    image: lscr.io/linuxserver/radarr:${RADARR_IMAGE_TAG}
     container_name: radarr
     restart: unless-stopped
     environment:
@@ -38,7 +38,7 @@ services:
       - starr_net
 
   prowlarr:
-    image: ghcr.io/hotio/prowlarr:1.28.2
+    image: lscr.io/linuxserver/prowlarr:${PROWLARR_IMAGE_TAG}
     container_name: prowlarr
     restart: unless-stopped
     environment:
@@ -100,7 +100,6 @@ services:
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
-      # UN_* variables are referenced from stacks/stack.env (keys only)
       - UN_SONARR_0_URL=${UN_SONARR_0_URL}
       - UN_SONARR_0_API_KEY=${UN_SONARR_0_API_KEY}
       - UN_RADARR_0_URL=${UN_RADARR_0_URL}
