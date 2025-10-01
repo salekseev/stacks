@@ -90,14 +90,60 @@ docker-compose -f stacks/<stack-name>.yaml logs -f
 ## Configuration Management
 
 ### Environment Variables
-- Check `stacks/stack.env` for shared environment variables
-- Individual stacks may require additional environment setup
+- **Centralized Configuration**: `stacks/stack.env` contains shared environment variables for the media automation stack
+- **Stack-Specific Variables**: 
+  - `starr.yaml` uses variables from `stack.env` (TZ, PUID, PGID, API keys, TUNNEL_TOKEN)
+  - Other stacks may use inline environment variables or separate env files
 - Review each `.yaml` file for specific requirements
 
 ### Security Considerations
-- Environment files may contain sensitive data
+- Environment files may contain sensitive data (API keys, tunnel tokens)
+- **Never commit `stack.env` with real credentials** - use `.gitignore`
 - Review `.gitignore` for excluded sensitive files
 - Use Docker secrets or external secret management when appropriate
+- For Portainer deployments, upload env files through Portainer UI
+
+### Stack-Specific Notes
+
+#### Media Automation Stack (`starr.yaml`)
+- **Deployment**: Via Portainer web UI on remote host
+- **Environment**: Requires `stacks/stack.env` with configured values
+- **Host Directories**: Must exist on Portainer host before deployment
+  - Media: `/mnt/dpool/media/{tv,movies,downloads/{usenet,torrents}}`
+  - Configs: `/mnt/spool/apps/config/{sonarr,radarr,prowlarr,nzbget,qbittorrent,flaresolverr,unpackerr,recyclarr,cloudflared}`
+- **Validation**: Use Portainer's built-in compose validation or `./scripts/validate-stack.sh starr`
+- **Network**: Isolated `starr_net` bridge network (172.28.0.0/16)
+- **Port Exposure**: Only qBittorrent peer ports (6881/tcp, 6881/udp) published
+- **Remote Access**: All web UIs accessible only via Cloudflare Tunnel
+- **Documentation**: See [detailed quickstart](specs/001-create-a-comprehensive/quickstart.md)
+
+### Local Testing
+
+**Test Script**: `scripts/test-stack.sh`
+- **Purpose**: Validate stack configuration locally before Portainer deployment
+- **Usage**: `./scripts/test-stack.sh starr [--keep-running] [--verbose]`
+- **Test Environment**: Uses `stacks/stack-test.env` with temporary directories
+- **Validation**: All 9 services must reach healthy/running state
+- **Cleanup**: Automatic (removes containers and temp files)
+
+**Environment Parameterization**:
+- Host paths now use environment variables:
+  - `STARR_CONFIG_ROOT` - base config directory
+  - `STARR_MEDIA_ROOT` - base media directory
+  - `STARR_NETWORK_NAME` - network name
+- **Production**: Uses `stacks/stack.env` (not committed)
+- **Testing**: Uses `stacks/stack-test.env` (committed, safe defaults)
+- **Backward Compatible**: Defaults to original paths if variables not set
+
+**Test Workflow**:
+1. Edit `stacks/starr.yaml`
+2. Run `./scripts/test-stack.sh starr` to validate locally
+3. If tests pass, deploy to Portainer with confidence
+
+**Troubleshooting Tests**:
+- Timeout waiting for healthy: Check `docker compose logs`
+- Port conflicts: Ensure no production stack running locally
+- Permission errors: Ensure user in docker group
 
 ## Testing and Validation
 

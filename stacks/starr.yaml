@@ -1,0 +1,181 @@
+services:
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:1.28.2
+    container_name: prowlarr
+    environment:
+      TZ: ${TZ}
+      PUID: ${PUID}
+      PGID: ${PGID}
+      UMASK: ${UMASK}
+    volumes:
+      - ${STARR_CONFIG_ROOT}/prowlarr:/config
+    networks:
+      - starr_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9696/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:4.0.11
+    container_name: sonarr
+    environment:
+      TZ: ${TZ}
+      PUID: ${PUID}
+      PGID: ${PGID}
+      UMASK: ${UMASK}
+    volumes:
+      - ${STARR_CONFIG_ROOT}/sonarr:/config
+      - ${STARR_MEDIA_ROOT}:/media
+      - ${STARR_MEDIA_ROOT}/downloads:/downloads
+    networks:
+      - starr_net
+    depends_on:
+      prowlarr:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8989/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    restart: unless-stopped
+
+  radarr:
+    image: lscr.io/linuxserver/radarr:5.15.1
+    container_name: radarr
+    environment:
+      TZ: ${TZ}
+      PUID: ${PUID}
+      PGID: ${PGID}
+      UMASK: ${UMASK}
+    volumes:
+      - ${STARR_CONFIG_ROOT}/radarr:/config
+      - ${STARR_MEDIA_ROOT}:/media
+      - ${STARR_MEDIA_ROOT}/downloads:/downloads
+    networks:
+      - starr_net
+    depends_on:
+      prowlarr:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7878/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    restart: unless-stopped
+
+  nzbget:
+    image: ghcr.io/nzbgetcom/nzbget:v25.3
+    container_name: nzbget
+    environment:
+      TZ: ${TZ}
+      PUID: ${PUID}
+      PGID: ${PGID}
+      UMASK: ${UMASK}
+    volumes:
+      - ${STARR_CONFIG_ROOT}/nzbget:/config
+      - ${STARR_MEDIA_ROOT}/downloads/usenet:/downloads
+    networks:
+      - starr_net
+    restart: unless-stopped
+
+  qbittorrent:
+    image: ghcr.io/qbittorrent/docker-qbittorrent-nox:5.1.2-2
+    container_name: qbittorrent
+    environment:
+      TZ: ${TZ}
+      PUID: ${PUID}
+      PGID: ${PGID}
+      UMASK: ${UMASK}
+      WEBUI_PORT: ${WEBUI_PORT}
+    volumes:
+      - ${STARR_CONFIG_ROOT}/qbittorrent:/config
+      - ${STARR_MEDIA_ROOT}/downloads/torrents:/downloads
+    ports:
+      - "6881:6881/tcp"
+      - "6881:6881/udp"
+      - "8080:8080"
+    networks:
+      - starr_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v2/auth/login"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:v3.3.21
+    container_name: flaresolverr
+    environment:
+      TZ: ${TZ}
+    networks:
+      - starr_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8191/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  unpackerr:
+    image: golift/unpackerr:0.14.5
+    container_name: unpackerr
+    environment:
+      TZ: ${TZ}
+      PUID: ${PUID}
+      PGID: ${PGID}
+      UN_SONARR_0_URL: http://sonarr:8989
+      UN_SONARR_0_API_KEY: ${SONARR_API_KEY}
+      UN_RADARR_0_URL: http://radarr:7878
+      UN_RADARR_0_API_KEY: ${RADARR_API_KEY}
+    volumes:
+      - ${STARR_CONFIG_ROOT}/unpackerr:/config
+      - ${STARR_MEDIA_ROOT}/downloads:/downloads
+    networks:
+      - starr_net
+    depends_on:
+      - nzbget
+      - qbittorrent
+    restart: unless-stopped
+
+  recyclarr:
+    image: ghcr.io/recyclarr/recyclarr:7.2.4
+    container_name: recyclarr
+    environment:
+      TZ: ${TZ}
+      RECYCLARR_CREATE_CONFIG: "true"
+    volumes:
+      - ${STARR_CONFIG_ROOT}/recyclarr:/config
+    networks:
+      - starr_net
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:2024.10.1
+    container_name: cloudflared
+    command: tunnel run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN}
+    networks:
+      - starr_net
+    restart: unless-stopped
+
+networks:
+  starr_net:
+    name: ${STARR_NETWORK_NAME:-starr_net}
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+volumes:
+  # Using bind mounts, no named volumes needed
+  {}
