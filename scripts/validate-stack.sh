@@ -22,10 +22,15 @@ fi
 
 # Validate the stack file
 echo "Validating ${STACK_FILE}..."
-if docker-compose -f "${STACK_FILE}" config > /dev/null; then
-  echo "Validation successful for ${STACK_FILE}"
+if docker compose -f "${STACK_FILE}" --env-file stacks/stack.env config --quiet; then
+  echo "✓ Validation successful for ${STACK_FILE}"
+  echo ""
+  echo "Services:"
+  docker compose -f "${STACK_FILE}" --env-file stacks/stack.env config --services | sort
+  echo ""
+  echo "Networks:"
+  docker compose -f "${STACK_FILE}" --env-file stacks/stack.env config | grep -A 2 "^networks:"
 else
-  echo "Validation failed for ${STACK_FILE}"
-  # The error output from docker-compose will be printed to stderr
+  echo "✗ Validation failed for ${STACK_FILE}"
   exit 1
 fi

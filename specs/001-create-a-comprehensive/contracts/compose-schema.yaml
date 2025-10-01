@@ -1,0 +1,220 @@
+# Docker Compose Schema: Media Automation Stack
+# This is the complete compose file structure template
+# Actual implementation will be in stacks/starr.yaml
+
+version: "3.9"
+
+services:
+  # ============================================
+  # INDEXER MANAGEMENT (must start first)
+  # ============================================
+  
+  prowlarr:
+    image: ghcr.io/hotio/prowlarr:1.11.0
+    container_name: prowlarr
+    environment:
+      TZ: ${TZ}
+      PUID: ${PUID}
+      PGID: ${PGID}
+      UMASK: ${UMASK}
+    volumes:
+      - /mnt/spool/apps/config/prowlarr:/config
+    networks:
+      - starr_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9696/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+  # ============================================
+  # MEDIA MANAGEMENT (depends on Prowlarr)
+  # ============================================
+  
+  sonarr:
+    image: ghcr.io/hotio/sonarr:4.0.0
+    container_name: sonarr
+    environment:
+      TZ: ${TZ}
+      PUID: ${PUID}
+      PGID: ${PGID}
+      UMASK: ${UMASK}
+    volumes:
+      - /mnt/spool/apps/config/sonarr:/config
+      - /mnt/dpool/media:/media
+      - /mnt/dpool/media/downloads:/downloads
+    networks:
+      - starr_net
+    depends_on:
+      prowlarr:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8989/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    restart: unless-stopped
+
+  radarr:
+    image: ghcr.io/hotio/radarr:5.2.0
+    container_name: radarr
+    environment:
+      TZ: ${TZ}
+      PUID: ${PUID}
+      PGID: ${PGID}
+      UMASK: ${UMASK}
+    volumes:
+      - /mnt/spool/apps/config/radarr:/config
+      - /mnt/dpool/media:/media
+      - /mnt/dpool/media/downloads:/downloads
+    networks:
+      - starr_net
+    depends_on:
+      prowlarr:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7878/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    restart: unless-stopped
+
+  # ============================================
+  # DOWNLOAD CLIENTS (independent)
+  # ============================================
+  
+  sabnzbd:
+    image: ghcr.io/hotio/sabnzbd:4.2.0
+    container_name: sabnzbd
+    environment:
+      TZ: ${TZ}
+      PUID: ${PUID}
+      PGID: ${PGID}
+      UMASK: ${UMASK}
+    volumes:
+      - /mnt/spool/apps/config/sabnzbd:/config
+      - /mnt/dpool/media/downloads/usenet:/downloads
+    networks:
+      - starr_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api?mode=version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+  qbittorrent:
+    image: ghcr.io/hotio/qbittorrent:4.6.0
+    container_name: qbittorrent
+    environment:
+      TZ: ${TZ}
+      PUID: ${PUID}
+      PGID: ${PGID}
+      UMASK: ${UMASK}
+      WEBUI_PORT: 8080
+    volumes:
+      - /mnt/spool/apps/config/qbittorrent:/config
+      - /mnt/dpool/media/downloads/torrents:/downloads
+    ports:
+      - "6881:6881/tcp"
+      - "6881:6881/udp"
+    networks:
+      - starr_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v2/app/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+  # ============================================
+  # SUPPORTING SERVICES
+  # ============================================
+  
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:3.3.16
+    container_name: flaresolverr
+    environment:
+      TZ: ${TZ}
+    networks:
+      - starr_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8191/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  unpackerr:
+    image: ghcr.io/hotio/unpackerr:0.12.0
+    container_name: unpackerr
+    environment:
+      TZ: ${TZ}
+      PUID: ${PUID}
+      PGID: ${PGID}
+      UN_SONARR_0_URL: http://sonarr:8989
+      UN_SONARR_0_API_KEY: ${SONARR_API_KEY}
+      UN_RADARR_0_URL: http://radarr:7878
+      UN_RADARR_0_API_KEY: ${RADARR_API_KEY}
+    volumes:
+      - /mnt/spool/apps/config/unpackerr:/config
+      - /mnt/dpool/media/downloads:/downloads
+    networks:
+      - starr_net
+    depends_on:
+      - sabnzbd
+      - qbittorrent
+    restart: unless-stopped
+
+  recyclarr:
+    image: ghcr.io/recyclarr/recyclarr:6.0.0
+    container_name: recyclarr
+    environment:
+      TZ: ${TZ}
+      RECYCLARR_CREATE_CONFIG: "true"
+    volumes:
+      - /mnt/spool/apps/config/recyclarr:/config
+    networks:
+      - starr_net
+    restart: unless-stopped
+
+  # ============================================
+  # REMOTE ACCESS
+  # ============================================
+  
+  cloudflared:
+    image: cloudflare/cloudflared:2024.1.0
+    container_name: cloudflared
+    command: tunnel run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN}
+    networks:
+      - starr_net
+    restart: unless-stopped
+
+# ============================================
+# NETWORKS
+# ============================================
+
+networks:
+  starr_net:
+    name: starr_net
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+# ============================================
+# VOLUMES (optional - using bind mounts instead)
+# ============================================
+
+# Named volumes not needed - all using bind mounts to host paths
+volumes: {}
+
