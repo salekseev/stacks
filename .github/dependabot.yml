@@ -1,7 +1,7 @@
 version: 2
 updates:
   # Monitor Docker images in Docker Compose files
-  - package-ecosystem: "docker"
+  - package-ecosystem: "docker-compose"
     directory: "/"
     schedule:
       interval: "weekly"
