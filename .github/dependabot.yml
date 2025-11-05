@@ -1,8 +1,8 @@
 version: 2
 updates:
-  # Monitor Docker images in stacks directory
+  # Monitor Docker images in Docker Compose files
   - package-ecosystem: "docker"
-    directory: "/stacks"
+    directory: "/"
     schedule:
       interval: "weekly"
       day: "monday"
