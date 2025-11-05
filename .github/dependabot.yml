@@ -1,9 +1,26 @@
 version: 2
 updates:
-  - package-ecosystem: "docker-compose"
+  # Monitor Docker images in stacks directory
+  - package-ecosystem: "docker"
     directory: "/stacks"
     schedule:
-      interval: "daily"
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 10
     labels:
       - "dependencies"
       - "docker"
+    commit-message:
+      prefix: "docker"
+      include: "scope"
+    reviewers:
+      - "salekseev"
+    # Group all docker image updates to reduce PR noise
+    groups:
+      docker-images:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
