@@ -1,0 +1,36 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "docker-compose": {
+    "fileMatch": [
+      "stacks/.+\\.ya?ml$"
+    ]
+  },
+  "schedule": [
+    "before 4am on Monday"
+  ],
+  "assignees": [
+    "@salekseev"
+  ],
+  "packageRules": [
+    {
+      "description": "Group all non-major Docker updates together",
+      "matchDatasources": ["docker"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "Docker non-major updates"
+    },
+    {
+      "description": "Major updates get their own PRs for review",
+      "matchDatasources": ["docker"],
+      "matchUpdateTypes": ["major"],
+      "groupName": null
+    }
+  ],
+  "labels": [
+    "dependencies",
+    "renovate"
+  ],
+  "prConcurrentLimit": 5
+}
