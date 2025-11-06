@@ -4,8 +4,8 @@
     "config:recommended"
   ],
   "docker-compose": {
-    "fileMatch": [
-      "stacks/.+\\.ya?ml$"
+    "managerFilePatterns": [
+      "/stacks/.+\\.ya?ml$/"
     ]
   },
   "schedule": [
@@ -17,14 +17,23 @@
   "packageRules": [
     {
       "description": "Group all non-major Docker updates together",
-      "matchDatasources": ["docker"],
-      "matchUpdateTypes": ["minor", "patch"],
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
       "groupName": "Docker non-major updates"
     },
     {
       "description": "Major updates get their own PRs for review",
-      "matchDatasources": ["docker"],
-      "matchUpdateTypes": ["major"],
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
       "groupName": null
     }
   ],
