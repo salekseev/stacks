@@ -3,7 +3,7 @@
 services:
   ser2net:
     container_name: ser2net
-    image: ghcr.io/jippi/docker-ser2net:4.6.3
+    image: ghcr.io/jippi/docker-ser2net:4.6.5
     restart: unless-stopped
     network_mode: host
     configs:
