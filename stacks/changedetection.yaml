@@ -4,7 +4,7 @@ services:
 
   changedetection:
     restart: unless-stopped
-    image: ghcr.io/dgtlmoon/changedetection.io:0.50.39
+    image: ghcr.io/dgtlmoon/changedetection.io:0.51.1
     container_name: changedetection
     hostname: changedetection
     volumes:

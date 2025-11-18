@@ -1,6 +1,6 @@
 services:
   go2rtc:
-    image: ghcr.io/alexxit/go2rtc:1.9.11-hardware
+    image: ghcr.io/alexxit/go2rtc:1.9.12-hardware
     container_name: go2rtc
     runtime: nvidia
     volumes:
