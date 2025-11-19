@@ -4,7 +4,7 @@ services:
   iperf3:
     restart: unless-stopped
     container_name: iperf3-server
-    image: tangentsoft/iperf3:v3.19
+    image: tangentsoft/iperf3:v3.20
     ports:
       - 5201:5201/udp
       - 5201:5201/tcp
