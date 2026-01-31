@@ -1,0 +1,22 @@
+# $schema: https://raw.githubusercontent.com/compose-spec/compose-spec/refs/heads/main/schema/compose-spec.json
+
+services:
+
+  cli-proxy-api:
+    image: eceasy/cli-proxy-api-plus:latest
+    pull_policy: always
+    container_name: cli-proxy-api-plus
+    environment:
+      DEPLOY: "cloud"
+    ports:
+      - "8317:8317"
+      - "8085:8085"
+      - "1455:1455"
+      - "54545:54545"
+      - "51121:51121"
+      - "11451:11451"
+    volumes:
+      - /mnt/spool/apps/config/cli-proxy-api/config.yaml:/CLIProxyAPI/config.yaml
+      - /mnt/spool/apps/config/cli-proxy-api/auths:/CLIProxyAPI/auths
+      - /mnt/spool/apps/config/cli-proxy-api/logs:/CLIProxyAPI/logs
+    restart: unless-stopped
