@@ -19,6 +19,20 @@ services:
       - cloudflare
     restart: unless-stopped
 
+  nzbget:
+    container_name: nzbget
+    image: ghcr.io/hotio/nzbget:release-25.4
+    env_file:
+      - stack.env
+    volumes:
+      - /mnt/spool/apps/config/nzbget:/config
+      - /mnt/dpool/media:/data
+    expose:
+      - "6789"
+    networks:
+      - cloudflare
+    restart: unless-stopped
+
   prowlarr:
     image: ghcr.io/hotio/prowlarr:release-2.3.0.5236
     container_name: prowlarr
@@ -99,8 +113,10 @@ services:
     user: 1000:1000
     env_file:
       - stack.env
+    environment:
+      - CRON_SCHEDULE=@daily
     volumes:
-      - /mnt/spool/apps/config/recyclarr:/config
+      - /mnt/spool/apps/config/recyclarr:/config:ro
     depends_on:
       - radarr
       - sonarr
@@ -115,7 +131,7 @@ configs:
       credentials-file: /etc/cloudflared/creds/08942756-aeb6-45dc-aaaa-5ff4ee5a0475.json
       ingress:
         - hostname: media-prowlarr.alekseev.us
-          service: http://prowlarr:9696  
+          service: http://prowlarr:9696
           access:
             required: true
             teamName: alekseev
@@ -135,6 +151,8 @@ configs:
             teamName: alekseev
             audTag:
               - 00d9b88538ea4d3f73429e864dc9a163ae0199d6224fb1c2550de2c869f9885d
+        - hostname: nzbget.alekseev.us
+          service: http://nzbget:6789
         - service: http_status:404
 
 networks:
