@@ -1,0 +1,47 @@
+services:
+
+  cloudflared:
+    image: cloudflare/cloudflared:2026.1.2
+    command: tunnel run --config /etc/cloudflared/config.yml
+    user: 568:568
+    configs:
+      - source: cloudflared
+        target: /etc/cloudflared/config.yml
+        uid: "568"
+        gid: "568"
+        mode: 0440
+    volumes:
+      - /mnt/spool/apps/config/cloudflared:/etc/cloudflared
+    environment:
+      - NO_AUTOUPDATE=true
+    networks:
+      - cloudflare
+    restart: unless-stopped
+
+  radarr:
+    image: lscr.io/linuxserver/radarr:6.0.4
+    container_name: radarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+    volumes:
+      - /mnt/spool/apps/config/radarr:/config
+      - /mnt/dpool/media:/media
+    networks:
+      - cloudflare
+    restart: unless-stopped
+
+configs:
+  cloudflared:
+    content: |
+      tunnel: 08942756-aeb6-45dc-aaaa-5ff4ee5a0475
+      credentials-file: /etc/cloudflared/creds/08942756-aeb6-45dc-aaaa-5ff4ee5a0475.json
+      ingress:
+        - hostname: media-radarr.alekseev.us
+          service: http://radarr:7878
+        - service: http_status:404
+
+networks:
+  cloudflare:
+    name: cloudflare
