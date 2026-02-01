@@ -15,22 +15,65 @@ services:
         mode: 0440
     volumes:
       - /mnt/spool/apps/config/cloudflared:/etc/cloudflared
-    environment:
-      - NO_AUTOUPDATE=true
+    networks:
+      - cloudflare
+    restart: unless-stopped
+
+  prowlarr:
+    image: ghcr.io/hotio/prowlarr:release-2.3.0.5236
+    container_name: prowlarr
+    restart: unless-stopped
+    env_file:
+      - stack.env
+    volumes:
+      - /mnt/spool/apps/config/prowlarr:/config
+      - /mnt/dpool/media:/media
+    expose:
+      - "9696"
+    depends_on:
+      - byparr
+    networks:
+      - cloudflare
+
+  byparr:
+    image: ghcr.io/thephaseless/byparr:latest
+    container_name: byparr
+    env_file:
+      - stack.env
+    expose:
+      - "8191"
     networks:
       - cloudflare
     restart: unless-stopped
 
   radarr:
-    image: lscr.io/linuxserver/radarr:6.0.4
+    image: ghcr.io/hotio/radarr:release-6.0.4.10291
     container_name: radarr
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=America/New_York
+    env_file:
+      - stack.env
     volumes:
       - /mnt/spool/apps/config/radarr:/config
       - /mnt/dpool/media:/media
+    expose:
+      - "7878"
+    depends_on:
+      - prowlarr
+    networks:
+      - cloudflare
+    restart: unless-stopped
+
+  sonarr:
+    image: ghcr.io/hotio/sonarr:release-4.0.16.2944
+    container_name: sonarr
+    env_file:
+      - stack.env
+    volumes:
+      - /mnt/spool/apps/config/sonarr:/config
+      - /mnt/dpool/media:/media
+    expose:
+      - "8989"
+    depends_on:
+      - prowlarr
     networks:
       - cloudflare
     restart: unless-stopped
@@ -41,8 +84,12 @@ configs:
       tunnel: 08942756-aeb6-45dc-aaaa-5ff4ee5a0475
       credentials-file: /etc/cloudflared/creds/08942756-aeb6-45dc-aaaa-5ff4ee5a0475.json
       ingress:
+        - hostname: media-prowlarr.alekseev.us
+          service: http://prowlarr:9696  
         - hostname: media-radarr.alekseev.us
           service: http://radarr:7878
+        - hostname: media-sonarr.alekseev.us
+          service: http://sonarr:8989
         - service: http_status:404
 
 networks:
