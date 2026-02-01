@@ -4,7 +4,8 @@ services:
 
   cloudflared:
     image: cloudflare/cloudflared:2026.1.2
-    command: tunnel run --config /etc/cloudflared/config.yml
+    container_name: cloudflared
+    command: --config /etc/cloudflared/config.yml tunnel run
     user: 568:568
     configs:
       - source: cloudflared
@@ -13,7 +14,7 @@ services:
         gid: "568"
         mode: 0440
     volumes:
-      - /mnt/spool/apps/config/cloudflared:/etc/cloudflared
+      - /mnt/spool/apps/config/cloudflared:/etc/cloudflared:ro
     environment:
       - NO_AUTOUPDATE=true
     networks:
