@@ -86,6 +86,11 @@ services:
     volumes:
       - /mnt/spool/apps/config/unpackerr:/config
       - /mnt/dpool/media:/media
+    depends_on:
+      - radarr
+      - sonarr
+    networks:
+      - cloudflare
     restart: unless-stopped
 
 configs:
