@@ -78,6 +78,17 @@ services:
       - cloudflare
     restart: unless-stopped
 
+  unpackerr:
+    image: ghcr.io/hotio/unpackerr:release-0.14.5
+    container_name: unpackerr
+    user: 1000:1000
+    env_file:
+      - stack.env
+    volumes:
+      - /mnt/spool/apps/config/unpackerr:/config
+      - /mnt/dpool/media:/media
+    restart: unless-stopped
+
 configs:
   cloudflared:
     content: |
