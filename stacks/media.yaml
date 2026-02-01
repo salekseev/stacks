@@ -86,10 +86,25 @@ configs:
       ingress:
         - hostname: media-prowlarr.alekseev.us
           service: http://prowlarr:9696  
+          access:
+            required: true
+            teamName: alekseev
+            audTag:
+              - 28301c1e32ae3464a9017afc913e4770a0092631d412ad8144395add357c87c5
         - hostname: media-radarr.alekseev.us
           service: http://radarr:7878
+          access:
+            required: true
+            teamName: alekseev
+            audTag:
+              - 6907f3d06f86c26e1fb7b26b75470ac1aa3f8b6cd60ba8df7b370fe8406669e9
         - hostname: media-sonarr.alekseev.us
           service: http://sonarr:8989
+          access:
+            required: true
+            teamName: alekseev
+            audTag:
+              - 00d9b88538ea4d3f73429e864dc9a163ae0199d6224fb1c2550de2c869f9885d
         - service: http_status:404
 
 networks:
