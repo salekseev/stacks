@@ -150,7 +150,7 @@ configs:
             teamName: alekseev
             audTag:
               - 00d9b88538ea4d3f73429e864dc9a163ae0199d6224fb1c2550de2c869f9885d
-        - hostname: sabnzbd.alekseev.us
+        - hostname: media-sabnzbd.alekseev.us
           service: http://sabnzbd:8080
         - service: http_status:404
 
