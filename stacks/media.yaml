@@ -93,6 +93,21 @@ services:
       - cloudflare
     restart: unless-stopped
 
+  recyclarr:
+    image: ghcr.io/recyclarr/recyclarr:7.5.2
+    container_name: recyclarr
+    user: 1000:1000
+    env_file:
+      - stack.env
+    volumes:
+      - /mnt/spool/apps/config/recyclarr:/config
+    depends_on:
+      - radarr
+      - sonarr
+    networks:
+      - cloudflare
+    restart: unless-stopped
+
 configs:
   cloudflared:
     content: |
