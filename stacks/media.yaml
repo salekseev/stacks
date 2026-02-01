@@ -26,7 +26,7 @@ services:
       - stack.env
     volumes:
       - /mnt/spool/apps/config/nzbget:/config
-      - /mnt/dpool/media:/data
+      - /mnt/dpool/media:/media
     expose:
       - "6789"
     networks:
