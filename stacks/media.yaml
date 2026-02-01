@@ -19,19 +19,18 @@ services:
       - cloudflare
     restart: unless-stopped
 
-  nzbget:
-    container_name: nzbget
-    image: ghcr.io/hotio/nzbget:release-25.4
+  sabnzbd:
+    container_name: sabnzbd
+    image: ghcr.io/hotio/sabnzbd:release-4.5.5
     env_file:
       - stack.env
     volumes:
-      - /mnt/spool/apps/config/nzbget:/config
+      - /mnt/spool/apps/config/sabnzbd:/config
       - /mnt/dpool/media:/media
     expose:
-      - "6789"
+      - "8080"
     networks:
       - cloudflare
-    restart: unless-stopped
 
   prowlarr:
     image: ghcr.io/hotio/prowlarr:release-2.3.0.5236
@@ -151,8 +150,8 @@ configs:
             teamName: alekseev
             audTag:
               - 00d9b88538ea4d3f73429e864dc9a163ae0199d6224fb1c2550de2c869f9885d
-        - hostname: nzbget.alekseev.us
-          service: http://nzbget:6789
+        - hostname: sabnzbd.alekseev.us
+          service: http://sabnzbd:8080
         - service: http_status:404
 
 networks:
