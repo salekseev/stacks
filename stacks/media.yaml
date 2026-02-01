@@ -129,29 +129,34 @@ configs:
       tunnel: 08942756-aeb6-45dc-aaaa-5ff4ee5a0475
       credentials-file: /etc/cloudflared/creds/08942756-aeb6-45dc-aaaa-5ff4ee5a0475.json
       ingress:
-        - hostname: media-prowlarr.alekseev.us
+        - hostname: prowlarr.alekseev.us
           service: http://prowlarr:9696
           access:
             required: true
             teamName: alekseev
             audTag:
               - 28301c1e32ae3464a9017afc913e4770a0092631d412ad8144395add357c87c5
-        - hostname: media-radarr.alekseev.us
+        - hostname: radarr.alekseev.us
           service: http://radarr:7878
           access:
             required: true
             teamName: alekseev
             audTag:
               - 6907f3d06f86c26e1fb7b26b75470ac1aa3f8b6cd60ba8df7b370fe8406669e9
-        - hostname: media-sonarr.alekseev.us
+        - hostname: sonarr.alekseev.us
           service: http://sonarr:8989
           access:
             required: true
             teamName: alekseev
             audTag:
               - 00d9b88538ea4d3f73429e864dc9a163ae0199d6224fb1c2550de2c869f9885d
-        - hostname: media-sabnzbd.alekseev.us
+        - hostname: sabnzbd.alekseev.us
           service: http://sabnzbd:8080
+          access:
+            required: true
+            teamName: alekseev
+            audTag:
+              - 42bf6be4522ccc467f7ec8b00e8cf3210ebf38282a1587ec215681555f76a7e3
         - service: http_status:404
 
 networks:
