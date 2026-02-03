@@ -33,6 +33,47 @@ services:
       - cloudflare
     restart: unless-stopped
 
+  qbittorrent:
+    image: ghcr.io/hotio/qbittorrent:release-5.1.4
+    container_name: qbittorrent
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    env_file:
+      - stack.env
+    environment:
+      - LIBTORRENT=v1
+      - VPN_ENABLED=true
+      - VPN_PROVIDER=pia
+      - VPN_PIA_USER=${PIA_USERNAME}
+      - VPN_PIA_PASS=${PIA_PASSWORD}
+      - VPN_AUTO_PORT_FORWARD=true
+      - VPN_LAN_NETWORK=172.16.0.0/12
+    volumes:
+      - /mnt/spool/apps/config/qbittorrent:/config
+      - /mnt/dpool/media:/media
+    expose:
+      - "8080"
+    networks:
+      - cloudflare
+    restart: unless-stopped
+
+  qui:
+    image: ghcr.io/hotio/qui:release-v1.13.1
+    container_name: qui
+    env_file:
+      - stack.env
+    volumes:
+      - /mnt/spool/apps/config/qbittorrent:/config
+    expose:
+      - "7476"
+    depends_on:
+      - qbittorrent
+    networks:
+      - cloudflare
+    restart: unless-stopped
+
   prowlarr:
     image: ghcr.io/hotio/prowlarr:release-2.3.0.5236
     container_name: prowlarr
@@ -158,6 +199,20 @@ configs:
             teamName: alekseev
             audTag:
               - 42bf6be4522ccc467f7ec8b00e8cf3210ebf38282a1587ec215681555f76a7e3
+        - hostname: qbittorrent.alekseev.us
+          service: http://qbittorrent:8080
+          access:
+            required: true
+            teamName: alekseev
+            audTag:
+              - fe3a5b3ffaf1bee8daaaac9d32dd54757691c92ded80e00e57855bcfa6573bb3
+        - hostname: qui.alekseev.us
+          service: http://qui:7476
+          access:
+            required: true
+            teamName: alekseev
+            audTag:
+              - fe3a5b3ffaf1bee8daaaac9d32dd54757691c92ded80e00e57855bcfa6573bb3
         - service: http_status:404
 
 networks:
