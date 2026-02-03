@@ -51,7 +51,6 @@ services:
       - VPN_PIA_PREFERRED_REGION=ca
       - VPN_AUTO_PORT_FORWARD=true
       - VPN_PIA_PORT_FORWARD_PERSIST=true
-      - VPN_LAN_NETWORK=172.16.18.0/24
     volumes:
       - /mnt/spool/apps/config/qbittorrent:/config
       - /mnt/dpool/media:/media
