@@ -89,7 +89,7 @@ services:
     expose:
       - "7474"
     depends_on:
-      - qbittorrent
+      - qui
     networks:
       - cloudflare
     restart: unless-stopped
@@ -132,6 +132,7 @@ services:
     expose:
       - "7878"
     depends_on:
+      - qui
       - prowlarr
     networks:
       - cloudflare
@@ -148,6 +149,7 @@ services:
     expose:
       - "8989"
     depends_on:
+      - qui
       - prowlarr
     networks:
       - cloudflare
