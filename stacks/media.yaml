@@ -67,6 +67,7 @@ services:
       - stack.env
     volumes:
       - /mnt/spool/apps/config/qbittorrent:/config
+      - /mnt/dpool/media:/media
     expose:
       - "7476"
     depends_on:
