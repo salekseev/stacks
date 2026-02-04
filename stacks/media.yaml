@@ -83,7 +83,6 @@ services:
       - stack.env
     environment:
       - AUTOBRR__CHECK_FOR_UPDATES=false
-      - AUTOBRR__OIDC_DISABLE_BUILT_IN_LOGIN=true
     volumes:
       - /mnt/spool/apps/config/autobrr:/config
     expose:
