@@ -75,6 +75,25 @@ services:
       - cloudflare
     restart: unless-stopped
 
+  autobrr:
+    image: ghcr.io/s0up4200/autobrr-distroless:v1.72.1
+    container_name: autobrr
+    user: nobody
+    env_file:
+      - stack.env
+    environment:
+      - AUTOBRR__CHECK_FOR_UPDATES=false
+      - AUTOBRR__OIDC_DISABLE_BUILT_IN_LOGIN=true
+    volumes:
+      - /mnt/spool/apps/config/autobrr:/config
+    expose:
+      - "7474"
+    depends_on:
+      - qbittorrent
+    networks:
+      - cloudflare
+    restart: unless-stopped
+
   prowlarr:
     image: ghcr.io/hotio/prowlarr:release-2.3.0.5236
     container_name: prowlarr
@@ -214,6 +233,13 @@ configs:
             teamName: alekseev
             audTag:
               - fe3a5b3ffaf1bee8daaaac9d32dd54757691c92ded80e00e57855bcfa6573bb3
+        - hostname: autobrr.alekseev.us
+          service: http://autobrr:7474
+          access:
+            required: true
+            teamName: alekseev
+            audTag:
+              - PLACEHOLDER_AUD_TAG
         - service: http_status:404
 
 networks:
