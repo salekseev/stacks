@@ -109,6 +109,33 @@ To validate the syntax and configuration of a stack without starting any service
 ./scripts/validate-stack.sh <stack-name>
 ```
 
+### Dependabot Configuration Validation
+Before committing changes to the Dependabot configuration, use the `validate-dependabot.sh` script to perform a dry run validation. This script checks:
+- YAML syntax validation
+- Docker Compose file existence and validity
+- Included stack files validation
+- Directory path verification
+- Docker image detection
+
+```bash
+# Validate Dependabot configuration
+./scripts/validate-dependabot.sh
+```
+
+The script will perform comprehensive checks and provide colored output indicating:
+- ✓ Green: Validation passed
+- ✗ Red: Validation failed (needs fixing)
+- ⚠ Yellow: Warning or optional check skipped
+
+**Exit codes:**
+- `0`: All validations passed
+- `1`: One or more validations failed
+
+This validation should be run before committing any changes to:
+- `.github/dependabot.yml`
+- `stacks/docker-compose.yaml`
+- Individual stack files in `stacks/`
+
 ### Runtime Stack Testing
 Runtime testing involves deploying the stack to a live Docker environment to ensure it functions as expected.
 
