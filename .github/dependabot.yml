@@ -24,3 +24,4 @@ updates:
       - "dependencies"
       - "dependabot"
     open-pull-requests-limit: 5
+

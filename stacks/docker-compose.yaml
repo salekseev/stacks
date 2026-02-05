@@ -1,0 +1,14 @@
+# Main docker-compose file for Dependabot scanning
+# This file includes all individual stack configurations
+# Each stack can still be deployed independently using: docker-compose -f <stack-name>.yaml up
+
+# Include all stack configurations
+include:
+  - changedetection.yaml
+  - cli-proxy-api.yaml
+  - go2rtc.yaml
+  - iperf3.yaml
+  - media.yaml
+  - plex.yaml
+  - scrypted.yaml
+  - ser2net.yaml
