@@ -179,7 +179,7 @@ services:
     environment:
       - CRON_SCHEDULE=@daily
     volumes:
-      - /mnt/spool/apps/config/recyclarr:/config:ro
+      - /mnt/spool/apps/config/recyclarr:/config
     depends_on:
       - radarr
       - sonarr
