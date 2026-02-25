@@ -27,6 +27,17 @@
       "extractVersion": "^v(?<version>.*)$"
     },
     {
+      "description": "Handle qui image tags with release-v prefix",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "ghcr.io/hotio/qui"
+      ],
+      "versioning": "semver",
+      "extractVersion": "^release-v(?<version>.*)$"
+    },
+    {
       "description": "Group all non-major Docker updates together",
       "matchDatasources": [
         "docker"
