@@ -16,6 +16,17 @@
   ],
   "packageRules": [
     {
+      "description": "Handle autobrr distroless image tags with a leading v",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "ghcr.io/s0up4200/autobrr-distroless"
+      ],
+      "versioning": "semver",
+      "extractVersion": "^v(?<version>.*)$"
+    },
+    {
       "description": "Group all non-major Docker updates together",
       "matchDatasources": [
         "docker"
