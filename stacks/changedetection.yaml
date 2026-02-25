@@ -48,7 +48,7 @@ services:
   playwright-chrome:
     hostname: playwright-chrome
     container_name: playwright-chrome
-    image: ghcr.io/browserless/chromium:v2.41.0
+    image: ghcr.io/browserless/chromium:v2.42.0
     restart: on-failure:5
     cap_add:
       - SYS_ADMIN
