@@ -16,6 +16,24 @@
   ],
   "packageRules": [
     {
+      "description": "Pin digests for rolling tags to track underlying image changes",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchCurrentValue": "/^(latest|plexpass)$/i",
+      "pinDigests": true
+    },
+    {
+      "description": "Extract version from hotio images",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackagePatterns": [
+        "^ghcr\\.io/hotio/"
+      ],
+      "extractVersion": "^release-v?(?<version>.*)$"
+    },
+    {
       "description": "Group all non-major Docker updates together",
       "matchDatasources": [
         "docker"
