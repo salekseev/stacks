@@ -190,11 +190,11 @@ services:
   seerr:
     image: ghcr.io/seerr-team/seerr:v3.0.1
     container_name: seerr
-    user: 568:568
+    user: 1000:1000
     env_file:
       - stack.env
     volumes:
-      - /mnt/spool/apps/config/seerr:/config
+      - /mnt/spool/apps/config/seerr:/app/config
     expose:
       - "5055"
     healthcheck:
