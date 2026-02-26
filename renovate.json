@@ -28,10 +28,10 @@
       "matchDatasources": [
         "docker"
       ],
-      "matchPackagePrefixes": [
-        "ghcr.io/hotio/"
-      ],
-      "versionCompatibility": "^release-v?(?<version>.*)$"
+      "versionCompatibility": "^release-v?(?<version>.*)$",
+      "matchPackageNames": [
+        "ghcr.io/hotio/{/,}**"
+      ]
     },
     {
       "description": "Group minor updates together",
