@@ -210,7 +210,6 @@ services:
   tautulli:
     image: ghcr.io/tautulli/tautulli:v2.16.1
     container_name: tautulli
-    user: 1000:1000
     env_file:
       - stack.env
     volumes:
