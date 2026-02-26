@@ -24,14 +24,14 @@
       "pinDigests": true
     },
     {
-      "description": "Extract version from hotio images",
+      "description": "Parse version from hotio images and preserve release- prefix",
       "matchDatasources": [
         "docker"
       ],
-      "matchPackagePatterns": [
-        "^ghcr\\.io/hotio/"
+      "matchPackagePrefixes": [
+        "ghcr.io/hotio/"
       ],
-      "extractVersion": "^release-v?(?<version>.*)$"
+      "versionCompatibility": "^release-v?(?<version>.*)$"
     },
     {
       "description": "Group all non-major Docker updates together",
