@@ -61,7 +61,7 @@ services:
     restart: unless-stopped
 
   qui:
-    image: ghcr.io/hotio/qui:release-v1.13.1
+    image: ghcr.io/hotio/qui:release-v1.14.1
     container_name: qui
     env_file:
       - stack.env
@@ -171,7 +171,7 @@ services:
     restart: unless-stopped
 
   recyclarr:
-    image: ghcr.io/recyclarr/recyclarr:8.3.1
+    image: ghcr.io/recyclarr/recyclarr:8.3.2
     container_name: recyclarr
     user: 1000:1000
     env_file:
