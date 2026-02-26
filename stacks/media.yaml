@@ -187,6 +187,26 @@ services:
       - cloudflare
     restart: unless-stopped
 
+  seerr:
+    image: ghcr.io/seerr-team/seerr:v3.0.1
+    container_name: seerr
+    user: 568:568
+    env_file:
+      - stack.env
+    volumes:
+      - /mnt/spool/apps/config/seerr:/config
+    expose:
+      - "5055"
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:5055/api/v1/status || exit 1
+      start_period: 20s
+      timeout: 3s
+      interval: 15s
+      retries: 3
+    networks:
+      - cloudflare
+    restart: unless-stopped
+
 configs:
   cloudflared:
     content: |
@@ -207,6 +227,13 @@ configs:
             teamName: alekseev
             audTag:
               - 6907f3d06f86c26e1fb7b26b75470ac1aa3f8b6cd60ba8df7b370fe8406669e9
+        - hostname: requests.alekseev.us
+          service: http://seerr:5055
+          access:
+            required: true
+            teamName: alekseev
+            audTag:
+              - 0e925b5bb58ca5fa143e64d07d597d6151b157a1e9940228cad53de83b984666
         - hostname: sonarr.alekseev.us
           service: http://sonarr:8989
           access:
