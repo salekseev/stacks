@@ -34,20 +34,37 @@
       "versionCompatibility": "^release-v?(?<version>.*)$"
     },
     {
-      "description": "Group all non-major Docker updates together",
+      "description": "Group minor updates together",
       "matchDatasources": [
-        "docker"
+        "docker",
+        "github-tags"
       ],
       "matchUpdateTypes": [
-        "minor",
+        "minor"
+      ],
+      "groupName": "Minor updates"
+    },
+    {
+      "description": "Automerge patch updates",
+      "matchDatasources": [
+        "docker",
+        "github-tags"
+      ],
+      "matchUpdateTypes": [
         "patch"
       ],
-      "groupName": "Docker non-major updates"
+      "automerge": true,
+      "labels": [
+        "dependencies",
+        "renovate",
+        "automerge"
+      ]
     },
     {
       "description": "Major updates get their own PRs for review",
       "matchDatasources": [
-        "docker"
+        "docker",
+        "github-tags"
       ],
       "matchUpdateTypes": [
         "major"

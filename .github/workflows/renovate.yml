@@ -1,0 +1,44 @@
+name: Renovate Auto Merge
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - labeled
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: read
+
+jobs:
+  renovate:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.user.login == 'renovate[bot]' && github.repository == 'salekseev/stacks' && contains(github.event.pull_request.labels.*.name, 'automerge')
+    steps:
+      - name: Get GitHub App token
+        id: get-token
+        uses: octo-sts/action@f603d3be9d8dd9871a265776e625a27b00effe05 # v1.1.1
+        with:
+          scope: salekseev/stacks
+          identity: renovate
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Approve a PR if not already approved
+        run: |
+          gh pr checkout "$PR_URL"
+          if [ "$(gh pr status --json reviewDecision -q .currentBranch.reviewDecision)" != "APPROVED" ];
+          then gh pr review --approve "$PR_URL"
+          else echo "PR already approved, skipping additional approvals to minimize emails/notification noise.";
+          fi
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GITHUB_TOKEN: ${{ steps.get-token.outputs.token }}
+
+      - name: Enable auto-merge for patch updates
+        run: gh pr merge --auto --merge "${{ github.event.pull_request.html_url }}"
+        env:
+          GITHUB_TOKEN: ${{ steps.get-token.outputs.token }}
