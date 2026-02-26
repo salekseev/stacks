@@ -207,6 +207,20 @@ services:
       - cloudflare
     restart: unless-stopped
 
+  tautulli:
+    image: ghcr.io/tautulli/tautulli:v2.16.1
+    container_name: tautulli
+    user: 1000:1000
+    env_file:
+      - stack.env
+    volumes:
+      - /mnt/spool/apps/config/tautulli:/config
+    expose:
+      - "8181"
+    networks:
+      - cloudflare
+    restart: unless-stopped
+
 configs:
   cloudflared:
     content: |
@@ -259,6 +273,9 @@ configs:
           service: http://qui:7476
         - hostname: autobrr.alekseev.us
           service: http://autobrr:7474
+        - hostname: tautulli.alekseev.us
+          service: http://tautulli:8181
+        # The service below will simply respond with HTTP 404.
         - service: http_status:404
 
 networks:
