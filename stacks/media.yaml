@@ -156,7 +156,7 @@ services:
     restart: unless-stopped
 
   unpackerr:
-    image: ghcr.io/hotio/unpackerr:release-0.14.5
+    image: ghcr.io/hotio/unpackerr:release-0.15.0
     container_name: unpackerr
     env_file:
       - stack.env
@@ -188,7 +188,7 @@ services:
     restart: unless-stopped
 
   seerr:
-    image: ghcr.io/seerr-team/seerr:v3.0.1
+    image: ghcr.io/seerr-team/seerr:v3.1.0
     container_name: seerr
     user: 1000:1000
     env_file:
