@@ -3,7 +3,7 @@
 services:
 
   cli-proxy-api:
-    image: eceasy/cli-proxy-api-plus:latest@sha256:24fbee8422f50d18cd3d90463d1146dc4952f4a1714e23c3d0d07ac490e0657a
+    image: eceasy/cli-proxy-api-plus:latest@sha256:d18bc9894a2c7d838fca33a5d3600bc5d0056b620a04c9a13c83813c2bf9def2
     pull_policy: always
     container_name: cli-proxy-api-plus
     environment:
