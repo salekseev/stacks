@@ -1,7 +1,22 @@
 # $schema: https://raw.githubusercontent.com/compose-spec/compose-spec/refs/heads/main/schema/compose-spec.json
 
+# Browserless stack with Tailscale sidecar
+# This stack provides a browserless Chrome instance accessible via Tailscale
+# Can be used with changedetection and openclaw
+#
+# Required environment variables:
+#   TS_AUTHKEY - Tailscale authentication key (generate at https://login.tailscale.com/admin/settings/keys)
+#
+# Optional environment variables:
+#   TZ - Timezone (default: America/New_York)
+#   BROWSERLESS_TOKEN - API token for browserless authentication
+#
+# The browserless service is accessible via Tailscale at ws://browserless:3000
+# or http://browserless:3000 (if using HTTP API)
+
 services:
 
+  # Tailscale sidecar provides secure access to browserless over Tailnet
   tailscale:
     image: tailscale/tailscale:latest
     container_name: browserless-tailscale
@@ -19,6 +34,8 @@ services:
       - NET_ADMIN
       - SYS_MODULE
 
+  # Browserless Chrome instance for web automation
+  # Shares network with Tailscale sidecar for Tailnet access
   browserless:
     image: ghcr.io/browserless/chromium:v2.42.0
     container_name: browserless
