@@ -156,7 +156,7 @@ services:
     restart: unless-stopped
 
   unpackerr:
-    image: ghcr.io/hotio/unpackerr:release-0.15.0
+    image: ghcr.io/hotio/unpackerr:release-0.15.2
     container_name: unpackerr
     env_file:
       - stack.env
