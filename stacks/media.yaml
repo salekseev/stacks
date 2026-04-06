@@ -95,7 +95,7 @@ services:
     restart: unless-stopped
 
   prowlarr:
-    image: ghcr.io/hotio/prowlarr:release-2.3.0.5236
+    image: ghcr.io/hotio/prowlarr:release-2.3.5.5327
     container_name: prowlarr
     restart: unless-stopped
     env_file:
