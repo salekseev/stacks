@@ -92,7 +92,7 @@ services:
     restart: "no"
     entrypoint: ["sleep", "infinity"]
     environment:
-      - MC_HOST_rustfs=https://${RUSTFS_ACCESS_KEY}:${RUSTFS_SECRET_KEY}@localhost:9000
+    #  - MC_HOST_rustfs=https://${RUSTFS_ACCESS_KEY}:${RUSTFS_SECRET_KEY}@localhost:9000
       - MC_INSECURE=true
     depends_on:
       rustfs:
