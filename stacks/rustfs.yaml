@@ -14,7 +14,8 @@ services:
       - /mnt/spool/apps/config/rustfs/config/fly-wg0.conf:/etc/wireguard/wg0.conf:ro
     command: wg0
     dns:
-      - fdaa::3   # Fly.io internal DNS; avoids resolvconf in wg0.conf
+      - 192.168.1.1  # local resolver to resolve gateway endpoint before tunnel is up
+      - fdaa::3    # Fly.io internal DNS for .internal hostnames (reachable after tunnel)
     sysctls:
       - net.ipv6.conf.all.disable_ipv6=0
       - net.ipv6.conf.all.forwarding=1
