@@ -13,6 +13,8 @@ services:
       - /dev/net/tun:/dev/net/tun
       - /mnt/spool/apps/config/rustfs/config/fly-wg0.conf:/etc/wireguard/wg0.conf:ro
     command: wg0
+    dns:
+      - fdaa::3   # Fly.io internal DNS; avoids resolvconf in wg0.conf
     sysctls:
       - net.ipv6.conf.all.disable_ipv6=0
       - net.ipv6.conf.all.forwarding=1
