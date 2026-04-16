@@ -34,9 +34,6 @@ services:
     network_mode: "service:boringtun"
     restart: unless-stopped
     user: "568:568"
-    depends_on:
-      - boringtun
-      - otel-collector
     security_opt:
       - "no-new-privileges:true"
     env_file:
@@ -46,6 +43,8 @@ services:
       - RUSTFS_ADDRESS=0.0.0.0:9000
       - RUSTFS_CONSOLE_ADDRESS=0.0.0.0:9001
       - RUSTFS_CONSOLE_ENABLE=true
+      - RUSTFS_CORS_ALLOWED_ORIGINS=*
+      - RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS=*
       - RUSTFS_ACCESS_KEY_FILE=/config/secrets/access_key
       - RUSTFS_SECRET_KEY_FILE=/config/secrets/secret_key
       - RUSTFS_OBS_ENDPOINT=http://localhost:4318
@@ -57,9 +56,20 @@ services:
       - /mnt/spool/apps/config/rustfs/data:/data
       - /mnt/spool/apps/config/rustfs/config:/config
     healthcheck:
-      test: ["CMD", "sh", "-c", "curl -f http://127.0.0.1:9000/health"]
+      test:
+        [
+          "CMD",
+          "sh", "-c",
+          "curl -f http://127.0.0.1:9000/health && curl -f http://127.0.0.1:9001/rustfs/console/health"
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
-
+    depends_on:
+      otel-collector:
+        condition: service_started
+        required: false
+      boringtun:
+        condition: service_started
+        required: true
