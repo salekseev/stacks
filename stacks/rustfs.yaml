@@ -1,0 +1,75 @@
+# $schema: https://raw.githubusercontent.com/compose-spec/compose-spec/refs/heads/main/schema/compose-spec.json
+
+services:
+  boringtun:
+    image: ghcr.io/leonnicolas/boringtun:cli-0.7.0
+    container_name: boringtun
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    volumes:
+      - /mnt/spool/apps/config/rustfs/config/fly-wg0.conf:/etc/wireguard/wg0.conf:ro
+    ports:
+      - "9000:9000"   # S3 API (local access)
+      - "9001:9001"   # Console (local access)
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=0
+      - net.ipv6.conf.all.forwarding=1
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.123.0
+    container_name: otel-collector
+    network_mode: "service:boringtun"
+    restart: unless-stopped
+    depends_on:
+      - boringtun
+    volumes:
+      - /mnt/spool/apps/config/rustfs/config/otelcol-config.yml:/etc/otelcol-contrib/config.yaml:ro
+
+  rustfs:
+    image: rustfs/rustfs:1.0.0-alpha.93
+    container_name: rustfs
+    network_mode: "service:boringtun"
+    restart: unless-stopped
+    user: "568:568"
+    security_opt:
+      - "no-new-privileges:true"
+    env_file:
+      - stack.env
+    environment:
+      - RUSTFS_VOLUMES=/data
+      - RUSTFS_ADDRESS=0.0.0.0:9000
+      - RUSTFS_CONSOLE_ADDRESS=0.0.0.0:9001
+      - RUSTFS_CONSOLE_ENABLE=true
+      - RUSTFS_CORS_ALLOWED_ORIGINS=*
+      - RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS=*
+      - RUSTFS_ACCESS_KEY_FILE=/config/secrets/access_key
+      - RUSTFS_SECRET_KEY_FILE=/config/secrets/secret_key
+      - RUSTFS_OBS_ENDPOINT=http://localhost:4318
+      - RUSTFS_OBS_LOGGER_LEVEL=info
+      - RUSTFS_OBS_TRACES_EXPORT_ENABLED=true
+      - RUSTFS_OBS_METRICS_EXPORT_ENABLED=true
+      - RUSTFS_OBS_LOGS_EXPORT_ENABLED=true
+    volumes:
+      - /mnt/spool/apps/config/rustfs/data:/data
+      - /mnt/spool/apps/config/rustfs/config:/config
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "sh", "-c",
+          "curl -f http://127.0.0.1:9000/health && curl -f http://127.0.0.1:9001/rustfs/console/health"
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    depends_on:
+      otel-collector:
+        condition: service_started
+        required: false
+      boringtun:
+        condition: service_started
+        required: true
