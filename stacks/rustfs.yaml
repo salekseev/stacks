@@ -18,9 +18,12 @@ services:
       - fdaa::3    # Fly.io internal DNS for .internal hostnames (reachable after tunnel)
     sysctls:
       - net.ipv6.conf.all.disable_ipv6=0
-      - net.ipv6.conf.all.forwarding=1
     healthcheck:
-      test: ["CMD-SHELL", "grep -q wg0 /proc/net/dev"]
+      test:
+        [
+          "CMD-SHELL",
+          "grep -q wg0 /proc/net/dev"
+        ]
       interval: 5s
       timeout: 3s
       retries: 12
