@@ -34,6 +34,7 @@ services:
     container_name: otel-collector
     network_mode: "service:boringtun"
     restart: unless-stopped
+    user: "568:568"
     depends_on:
       boringtun:
         condition: service_healthy
