@@ -57,11 +57,13 @@ services:
       - RUSTFS_SECRET_KEY_FILE=/config/secrets/secret_key
       - RUSTFS_OBS_ENDPOINT=http://localhost:4318
       - RUSTFS_OBS_LOGGER_LEVEL=info
+      - RUSTFS_OBS_LOG_DIRECTORY=/logs
       - RUSTFS_OBS_TRACES_EXPORT_ENABLED=true
       - RUSTFS_OBS_METRICS_EXPORT_ENABLED=true
       - RUSTFS_OBS_LOGS_EXPORT_ENABLED=true
     volumes:
       - /mnt/spool/apps/config/rustfs/data:/data
+      - /mnt/spool/apps/config/rustfs/logs:/logs
       - /mnt/spool/apps/config/rustfs/config:/config
     healthcheck:
       test:
