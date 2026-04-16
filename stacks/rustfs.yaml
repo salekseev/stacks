@@ -11,9 +11,6 @@ services:
       - /dev/net/tun:/dev/net/tun
     volumes:
       - /mnt/spool/apps/config/rustfs/config/fly-wg0.conf:/etc/wireguard/wg0.conf:ro
-    ports:
-      - "9000:9000"   # S3 API (local access)
-      - "9001:9001"   # Console (local access)
     sysctls:
       - net.ipv6.conf.all.disable_ipv6=0
       - net.ipv6.conf.all.forwarding=1
