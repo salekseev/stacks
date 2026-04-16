@@ -84,3 +84,16 @@ services:
       otel-collector:
         condition: service_started
         required: false
+
+  mc:
+    image: minio/mc:latest
+    container_name: mc
+    network_mode: "service:boringtun"
+    restart: "no"
+    entrypoint: ["sleep", "infinity"]
+    environment:
+      - MC_HOST_rustfs=https://${RUSTFS_ACCESS_KEY}:${RUSTFS_SECRET_KEY}@localhost:9000
+      - MC_INSECURE=true
+    depends_on:
+      rustfs:
+        condition: service_healthy
