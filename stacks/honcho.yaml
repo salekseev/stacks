@@ -1,45 +1,57 @@
 # $schema: https://raw.githubusercontent.com/compose-spec/compose-spec/refs/heads/main/schema/compose-spec.json
 
 x-honcho-env: &honcho-env
-  # Connection settings — actual secret-bearing values (DB password, LLM key)
-  # come from /app/config.toml. Env vars below set the rest.
+  # Connection settings — secrets (DB password, LLM key) live in /app/config.toml.
+  # Everything else inline here.
   CACHE_ENABLED: "true"
   CACHE_URL: "redis://honcho-redis:6379/0?suppress=true"
   AUTH_USE_AUTH: "false"
   LOG_LEVEL: INFO
-  # Route every Honcho LLM module through the litellm proxy.
-  # GitHub Copilot's GPT-5-family /chat/completions exposes `gpt-5-mini`
-  # (Azure OpenAI vendor) — override Honcho's `gpt-5.4-mini` default.
-  # Embeddings already default to text-embedding-3-small; no model override needed.
-  # gpt-5-mini supports reasoning_effort: low | medium | high. Tune per module.
-  DERIVER_MODEL_CONFIG__MODEL: "gpt-5-mini"
-  DERIVER_MODEL_CONFIG__THINKING_EFFORT: "low"
-  DERIVER_MODEL_CONFIG__OVERRIDES__BASE_URL: "http://litellm:4000/v1"
-  DIALECTIC_LEVELS__minimal__MODEL_CONFIG__MODEL: "gpt-5-mini"
-  DIALECTIC_LEVELS__minimal__MODEL_CONFIG__THINKING_EFFORT: "low"
-  DIALECTIC_LEVELS__minimal__MODEL_CONFIG__OVERRIDES__BASE_URL: "http://litellm:4000/v1"
-  DIALECTIC_LEVELS__low__MODEL_CONFIG__MODEL: "gpt-5-mini"
-  DIALECTIC_LEVELS__low__MODEL_CONFIG__THINKING_EFFORT: "low"
-  DIALECTIC_LEVELS__low__MODEL_CONFIG__OVERRIDES__BASE_URL: "http://litellm:4000/v1"
-  DIALECTIC_LEVELS__medium__MODEL_CONFIG__MODEL: "gpt-5-mini"
-  DIALECTIC_LEVELS__medium__MODEL_CONFIG__THINKING_EFFORT: "medium"
-  DIALECTIC_LEVELS__medium__MODEL_CONFIG__OVERRIDES__BASE_URL: "http://litellm:4000/v1"
-  DIALECTIC_LEVELS__high__MODEL_CONFIG__MODEL: "gpt-5-mini"
-  DIALECTIC_LEVELS__high__MODEL_CONFIG__THINKING_EFFORT: "medium"
-  DIALECTIC_LEVELS__high__MODEL_CONFIG__OVERRIDES__BASE_URL: "http://litellm:4000/v1"
-  DIALECTIC_LEVELS__max__MODEL_CONFIG__MODEL: "gpt-5-mini"
-  DIALECTIC_LEVELS__max__MODEL_CONFIG__THINKING_EFFORT: "high"
-  DIALECTIC_LEVELS__max__MODEL_CONFIG__OVERRIDES__BASE_URL: "http://litellm:4000/v1"
-  SUMMARY_MODEL_CONFIG__MODEL: "gpt-5-mini"
-  SUMMARY_MODEL_CONFIG__THINKING_EFFORT: "low"
-  SUMMARY_MODEL_CONFIG__OVERRIDES__BASE_URL: "http://litellm:4000/v1"
-  DREAM_DEDUCTION_MODEL_CONFIG__MODEL: "gpt-5-mini"
-  DREAM_DEDUCTION_MODEL_CONFIG__THINKING_EFFORT: "high"
-  DREAM_DEDUCTION_MODEL_CONFIG__OVERRIDES__BASE_URL: "http://litellm:4000/v1"
-  DREAM_INDUCTION_MODEL_CONFIG__MODEL: "gpt-5-mini"
-  DREAM_INDUCTION_MODEL_CONFIG__THINKING_EFFORT: "high"
-  DREAM_INDUCTION_MODEL_CONFIG__OVERRIDES__BASE_URL: "http://litellm:4000/v1"
-  EMBEDDING_MODEL_CONFIG__OVERRIDES__BASE_URL: "http://litellm:4000/v1"
+
+  # Route Honcho through the litellm proxy as an OpenAI-compatible endpoint.
+  # In Honcho v3.0.6, provider="custom" → CLIENTS["custom"], built from
+  # LLM_OPENAI_COMPATIBLE_{API_KEY,BASE_URL}. The api_key lives in config.toml.
+  LLM_OPENAI_COMPATIBLE_BASE_URL: "http://litellm:4000/v1"
+  # Honcho's "openrouter" embedding branch reuses OPENAI_COMPATIBLE_* and calls
+  # `openai/text-embedding-3-small` — must be exposed under that exact model_name in litellm.
+  LLM_EMBEDDING_PROVIDER: "openrouter"
+
+  DERIVER_PROVIDER: "custom"
+  DERIVER_MODEL: "gpt-5-mini"
+
+  SUMMARY_PROVIDER: "custom"
+  SUMMARY_MODEL: "gpt-5-mini"
+
+  DREAM_PROVIDER: "custom"
+  DREAM_MODEL: "gpt-5-mini"
+  DREAM_DEDUCTION_MODEL: "gpt-5-mini"
+  DREAM_INDUCTION_MODEL: "gpt-5-mini"
+
+  # Dialectic per-level — DialecticLevelSettings uses lowercase validation aliases.
+  # Defaults reproduce v3.0.6 src/config.py:359-391, with provider/model swapped to custom/gpt-5-mini.
+  DIALECTIC_LEVELS__minimal__provider: "custom"
+  DIALECTIC_LEVELS__minimal__model: "gpt-5-mini"
+  DIALECTIC_LEVELS__minimal__thinking_budget_tokens: "0"
+  DIALECTIC_LEVELS__minimal__max_tool_iterations: "1"
+  DIALECTIC_LEVELS__minimal__max_output_tokens: "250"
+  DIALECTIC_LEVELS__minimal__tool_choice: "any"
+  DIALECTIC_LEVELS__low__provider: "custom"
+  DIALECTIC_LEVELS__low__model: "gpt-5-mini"
+  DIALECTIC_LEVELS__low__thinking_budget_tokens: "0"
+  DIALECTIC_LEVELS__low__max_tool_iterations: "5"
+  DIALECTIC_LEVELS__low__tool_choice: "any"
+  DIALECTIC_LEVELS__medium__provider: "custom"
+  DIALECTIC_LEVELS__medium__model: "gpt-5-mini"
+  DIALECTIC_LEVELS__medium__thinking_budget_tokens: "0"
+  DIALECTIC_LEVELS__medium__max_tool_iterations: "2"
+  DIALECTIC_LEVELS__high__provider: "custom"
+  DIALECTIC_LEVELS__high__model: "gpt-5-mini"
+  DIALECTIC_LEVELS__high__thinking_budget_tokens: "0"
+  DIALECTIC_LEVELS__high__max_tool_iterations: "4"
+  DIALECTIC_LEVELS__max__provider: "custom"
+  DIALECTIC_LEVELS__max__model: "gpt-5-mini"
+  DIALECTIC_LEVELS__max__thinking_budget_tokens: "0"
+  DIALECTIC_LEVELS__max__max_tool_iterations: "10"
 
 services:
 
