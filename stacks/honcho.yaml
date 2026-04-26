@@ -1,0 +1,153 @@
+# $schema: https://raw.githubusercontent.com/compose-spec/compose-spec/refs/heads/main/schema/compose-spec.json
+
+x-honcho-env: &honcho-env
+  # Connection settings — actual secret-bearing values (DB password, LLM key)
+  # come from /app/config.toml. Env vars below set the rest.
+  CACHE_ENABLED: "true"
+  CACHE_URL: "redis://honcho-redis:6379/0?suppress=true"
+  AUTH_USE_AUTH: "false"
+  LOG_LEVEL: INFO
+  # Route every Honcho LLM module through the litellm proxy.
+  # GitHub Copilot's GPT-5-family /chat/completions exposes `gpt-5-mini`
+  # (Azure OpenAI vendor) — override Honcho's `gpt-5.4-mini` default.
+  # Embeddings already default to text-embedding-3-small; no model override needed.
+  # gpt-5-mini supports reasoning_effort: low | medium | high. Tune per module.
+  DERIVER_MODEL_CONFIG__MODEL: "gpt-5-mini"
+  DERIVER_MODEL_CONFIG__THINKING_EFFORT: "low"
+  DERIVER_MODEL_CONFIG__OVERRIDES__BASE_URL: "http://litellm:4000/v1"
+  DIALECTIC_LEVELS__minimal__MODEL_CONFIG__MODEL: "gpt-5-mini"
+  DIALECTIC_LEVELS__minimal__MODEL_CONFIG__THINKING_EFFORT: "low"
+  DIALECTIC_LEVELS__minimal__MODEL_CONFIG__OVERRIDES__BASE_URL: "http://litellm:4000/v1"
+  DIALECTIC_LEVELS__low__MODEL_CONFIG__MODEL: "gpt-5-mini"
+  DIALECTIC_LEVELS__low__MODEL_CONFIG__THINKING_EFFORT: "low"
+  DIALECTIC_LEVELS__low__MODEL_CONFIG__OVERRIDES__BASE_URL: "http://litellm:4000/v1"
+  DIALECTIC_LEVELS__medium__MODEL_CONFIG__MODEL: "gpt-5-mini"
+  DIALECTIC_LEVELS__medium__MODEL_CONFIG__THINKING_EFFORT: "medium"
+  DIALECTIC_LEVELS__medium__MODEL_CONFIG__OVERRIDES__BASE_URL: "http://litellm:4000/v1"
+  DIALECTIC_LEVELS__high__MODEL_CONFIG__MODEL: "gpt-5-mini"
+  DIALECTIC_LEVELS__high__MODEL_CONFIG__THINKING_EFFORT: "medium"
+  DIALECTIC_LEVELS__high__MODEL_CONFIG__OVERRIDES__BASE_URL: "http://litellm:4000/v1"
+  DIALECTIC_LEVELS__max__MODEL_CONFIG__MODEL: "gpt-5-mini"
+  DIALECTIC_LEVELS__max__MODEL_CONFIG__THINKING_EFFORT: "high"
+  DIALECTIC_LEVELS__max__MODEL_CONFIG__OVERRIDES__BASE_URL: "http://litellm:4000/v1"
+  SUMMARY_MODEL_CONFIG__MODEL: "gpt-5-mini"
+  SUMMARY_MODEL_CONFIG__THINKING_EFFORT: "low"
+  SUMMARY_MODEL_CONFIG__OVERRIDES__BASE_URL: "http://litellm:4000/v1"
+  DREAM_DEDUCTION_MODEL_CONFIG__MODEL: "gpt-5-mini"
+  DREAM_DEDUCTION_MODEL_CONFIG__THINKING_EFFORT: "high"
+  DREAM_DEDUCTION_MODEL_CONFIG__OVERRIDES__BASE_URL: "http://litellm:4000/v1"
+  DREAM_INDUCTION_MODEL_CONFIG__MODEL: "gpt-5-mini"
+  DREAM_INDUCTION_MODEL_CONFIG__THINKING_EFFORT: "high"
+  DREAM_INDUCTION_MODEL_CONFIG__OVERRIDES__BASE_URL: "http://litellm:4000/v1"
+  EMBEDDING_MODEL_CONFIG__OVERRIDES__BASE_URL: "http://litellm:4000/v1"
+
+services:
+
+  cloudflared:
+    image: cloudflare/cloudflared:2026.3.0
+    container_name: cloudflared-honcho
+    command: --config /etc/cloudflared/config.yml tunnel run
+    user: 568:568
+    configs:
+      - source: cloudflared-honcho
+        target: /etc/cloudflared/config.yml
+        uid: "568"
+        gid: "568"
+        mode: 0440
+    volumes:
+      - /mnt/spool/apps/config/honcho/cloudflared:/etc/cloudflared
+    restart: unless-stopped
+
+  honcho-api:
+    image: ghcr.io/plastic-labs/honcho:v3.0.6
+    container_name: honcho-api
+    entrypoint: ["sh", "docker/entrypoint.sh"]
+    environment:
+      <<: *honcho-env
+    volumes:
+      - /mnt/spool/apps/config/honcho/config.toml:/app/config.toml:ro
+    expose:
+      - "8000"
+    depends_on:
+      honcho-db:
+        condition: service_healthy
+      honcho-redis:
+        condition: service_healthy
+    networks:
+      - default
+      - litellm
+    restart: unless-stopped
+
+  honcho-deriver:
+    image: ghcr.io/plastic-labs/honcho:v3.0.6
+    container_name: honcho-deriver
+    entrypoint: ["/app/.venv/bin/python", "-m", "src.deriver"]
+    environment:
+      <<: *honcho-env
+    volumes:
+      - /mnt/spool/apps/config/honcho/config.toml:/app/config.toml:ro
+    depends_on:
+      honcho-db:
+        condition: service_healthy
+      honcho-redis:
+        condition: service_healthy
+    networks:
+      - default
+      - litellm
+    restart: unless-stopped
+
+  honcho-db:
+    image: pgvector/pgvector:pg15
+    container_name: honcho-db
+    command: ["postgres", "-c", "max_connections=200"]
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD_FILE=/run/secrets/honcho_db_password
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    secrets:
+      - honcho_db_password
+    volumes:
+      - /mnt/spool/apps/data/honcho/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  honcho-redis:
+    image: redis:8.2
+    container_name: honcho-redis
+    volumes:
+      - /mnt/spool/apps/data/honcho/redis:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+configs:
+  cloudflared-honcho:
+    content: |
+      tunnel: 62ba6da3-af02-42aa-a5ba-1a78e764f8c2
+      credentials-file: /etc/cloudflared/creds/62ba6da3-af02-42aa-a5ba-1a78e764f8c2.json
+      ingress:
+        - hostname: honcho.alekseev.us
+          service: http://honcho-api:8000
+          access:
+            required: true
+            teamName: alekseev
+            audTag:
+              - REPLACE-WITH-HONCHO-AUD-TAG
+        - service: http_status:404
+
+secrets:
+  honcho_db_password:
+    file: /mnt/spool/apps/config/honcho/secrets/db_password
+
+networks:
+  litellm:
+    external: true
+    name: litellm
