@@ -1,57 +1,9 @@
 # $schema: https://raw.githubusercontent.com/compose-spec/compose-spec/refs/heads/main/schema/compose-spec.json
 
-x-honcho-env: &honcho-env
-  # Connection settings — secrets (DB password, LLM key) live in /app/config.toml.
-  # Everything else inline here.
-  CACHE_ENABLED: "true"
-  CACHE_URL: "redis://honcho-redis:6379/0?suppress=true"
-  AUTH_USE_AUTH: "false"
-  LOG_LEVEL: INFO
-
-  # Route Honcho through the litellm proxy as an OpenAI-compatible endpoint.
-  # In Honcho v3.0.6, provider="custom" → CLIENTS["custom"], built from
-  # LLM_OPENAI_COMPATIBLE_{API_KEY,BASE_URL}. The api_key lives in config.toml.
-  LLM_OPENAI_COMPATIBLE_BASE_URL: "http://litellm:4000/v1"
-  # Honcho's "openrouter" embedding branch reuses OPENAI_COMPATIBLE_* and calls
-  # `openai/text-embedding-3-small` — must be exposed under that exact model_name in litellm.
-  LLM_EMBEDDING_PROVIDER: "openrouter"
-
-  DERIVER_PROVIDER: "custom"
-  DERIVER_MODEL: "gpt-5-mini"
-
-  SUMMARY_PROVIDER: "custom"
-  SUMMARY_MODEL: "gpt-5-mini"
-
-  DREAM_PROVIDER: "custom"
-  DREAM_MODEL: "gpt-5-mini"
-  DREAM_DEDUCTION_MODEL: "gpt-5-mini"
-  DREAM_INDUCTION_MODEL: "gpt-5-mini"
-
-  # Dialectic per-level — DialecticLevelSettings uses lowercase validation aliases.
-  # Defaults reproduce v3.0.6 src/config.py:359-391, with provider/model swapped to custom/gpt-5-mini.
-  DIALECTIC_LEVELS__minimal__provider: "custom"
-  DIALECTIC_LEVELS__minimal__model: "gpt-5-mini"
-  DIALECTIC_LEVELS__minimal__thinking_budget_tokens: "0"
-  DIALECTIC_LEVELS__minimal__max_tool_iterations: "1"
-  DIALECTIC_LEVELS__minimal__max_output_tokens: "250"
-  DIALECTIC_LEVELS__minimal__tool_choice: "any"
-  DIALECTIC_LEVELS__low__provider: "custom"
-  DIALECTIC_LEVELS__low__model: "gpt-5-mini"
-  DIALECTIC_LEVELS__low__thinking_budget_tokens: "0"
-  DIALECTIC_LEVELS__low__max_tool_iterations: "5"
-  DIALECTIC_LEVELS__low__tool_choice: "any"
-  DIALECTIC_LEVELS__medium__provider: "custom"
-  DIALECTIC_LEVELS__medium__model: "gpt-5-mini"
-  DIALECTIC_LEVELS__medium__thinking_budget_tokens: "0"
-  DIALECTIC_LEVELS__medium__max_tool_iterations: "2"
-  DIALECTIC_LEVELS__high__provider: "custom"
-  DIALECTIC_LEVELS__high__model: "gpt-5-mini"
-  DIALECTIC_LEVELS__high__thinking_budget_tokens: "0"
-  DIALECTIC_LEVELS__high__max_tool_iterations: "4"
-  DIALECTIC_LEVELS__max__provider: "custom"
-  DIALECTIC_LEVELS__max__model: "gpt-5-mini"
-  DIALECTIC_LEVELS__max__thinking_budget_tokens: "0"
-  DIALECTIC_LEVELS__max__max_tool_iterations: "10"
+# All Honcho config lives in /app/config.toml (mounted from
+# /mnt/spool/apps/config/honcho/config.toml). DB password is also
+# consumed via the Compose secret at /run/secrets/honcho_db_password.
+# No env-var overrides — change config.toml on host + restart.
 
 services:
 
@@ -75,8 +27,6 @@ services:
     container_name: honcho-api
     entrypoint: ["sh", "docker/entrypoint.sh"]
     user: "568:568"
-    environment:
-      <<: *honcho-env
     volumes:
       - /mnt/spool/apps/config/honcho/config.toml:/app/config.toml:ro
     expose:
@@ -96,8 +46,6 @@ services:
     container_name: honcho-deriver
     entrypoint: ["/app/.venv/bin/python", "-m", "src.deriver"]
     user: "568:568"
-    environment:
-      <<: *honcho-env
     volumes:
       - /mnt/spool/apps/config/honcho/config.toml:/app/config.toml:ro
     depends_on:
