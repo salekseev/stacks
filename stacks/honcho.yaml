@@ -1,10 +1,5 @@
 # $schema: https://raw.githubusercontent.com/compose-spec/compose-spec/refs/heads/main/schema/compose-spec.json
 
-# All Honcho config lives in /app/config.toml (mounted from
-# /mnt/spool/apps/config/honcho/config.toml). DB password is also
-# consumed via the Compose secret at /run/secrets/honcho_db_password.
-# No env-var overrides — change config.toml on host + restart.
-
 services:
 
   cloudflared:
@@ -48,6 +43,10 @@ services:
     user: "568:568"
     volumes:
       - /mnt/spool/apps/config/honcho/config.toml:/app/config.toml:ro
+    # Image bakes a HEALTHCHECK probing :8000/health, but deriver runs no HTTP
+    # server (it polls the Postgres queue). Disable to stop unhealthy reports.
+    healthcheck:
+      disable: true
     depends_on:
       honcho-db:
         condition: service_healthy
