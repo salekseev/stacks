@@ -24,6 +24,7 @@ services:
     environment:
       - GITHUB_COPILOT_TOKEN_DIR=/copilot-tokens
       - STORE_MODEL_IN_DB=False
+      - DISABLE_ADMIN_UI=True
     volumes:
       - /mnt/spool/apps/config/litellm/config.yaml:/app/config.yaml:ro
       - /mnt/spool/apps/config/litellm/copilot-tokens:/copilot-tokens
