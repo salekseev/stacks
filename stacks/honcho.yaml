@@ -144,7 +144,7 @@ configs:
             required: true
             teamName: alekseev
             audTag:
-              - REPLACE-WITH-HONCHO-AUD-TAG
+              - 2b215fa599c9e3d45c9f1fdb7962f96a00e58b0a2f8119c4d451514b5d6f6d7e
         - service: http_status:404
 
 secrets:
