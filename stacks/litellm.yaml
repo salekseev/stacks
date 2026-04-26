@@ -1,0 +1,44 @@
+# $schema: https://raw.githubusercontent.com/compose-spec/compose-spec/refs/heads/main/schema/compose-spec.json
+#
+# Standalone LiteLLM proxy. Provides an OpenAI-compatible endpoint backed by
+# the operator's GitHub Copilot subscription (litellm github_copilot provider).
+# Other stacks consume it over the shared `litellm` network as
+# `http://litellm:4000/v1`.
+#
+# First-run setup (host):
+#   1. Create /mnt/spool/apps/config/litellm/config.yaml — model list +
+#      `general_settings.master_key: sk-...` literal (host-only file, no secrets in repo).
+#   2. mkdir -p /mnt/spool/apps/config/litellm/copilot-tokens
+#   3. docker-compose -f stacks/litellm.yaml up -d  (creates the `litellm` network)
+#   4. Trigger the Copilot device-code flow once: send any chat completion through
+#      the proxy; the first call prints a github.com/login/device URL + code in logs.
+#      Complete login in browser; token persists in copilot-tokens/.
+
+services:
+
+  litellm:
+    image: ghcr.io/berriai/litellm:v1.83.7-stable
+    container_name: litellm
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    user: "568:568"
+    environment:
+      - GITHUB_COPILOT_TOKEN_DIR=/copilot-tokens
+      - STORE_MODEL_IN_DB=False
+    volumes:
+      - /mnt/spool/apps/config/litellm/config.yaml:/app/config.yaml:ro
+      - /mnt/spool/apps/config/litellm/copilot-tokens:/copilot-tokens
+    expose:
+      - "4000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:4000/health/liveliness"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - litellm
+    restart: unless-stopped
+
+networks:
+  litellm:
+    name: litellm
