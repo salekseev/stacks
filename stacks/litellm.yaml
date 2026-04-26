@@ -1,18 +1,4 @@
 # $schema: https://raw.githubusercontent.com/compose-spec/compose-spec/refs/heads/main/schema/compose-spec.json
-#
-# Standalone LiteLLM proxy. Provides an OpenAI-compatible endpoint backed by
-# the operator's GitHub Copilot subscription (litellm github_copilot provider).
-# Other stacks consume it over the shared `litellm` network as
-# `http://litellm:4000/v1`.
-#
-# First-run setup (host):
-#   1. Create /mnt/spool/apps/config/litellm/config.yaml — model list +
-#      `general_settings.master_key: sk-...` literal (host-only file, no secrets in repo).
-#   2. mkdir -p /mnt/spool/apps/config/litellm/copilot-tokens
-#   3. docker-compose -f stacks/litellm.yaml up -d  (creates the `litellm` network)
-#   4. Trigger the Copilot device-code flow once: send any chat completion through
-#      the proxy; the first call prints a github.com/login/device URL + code in logs.
-#      Complete login in browser; token persists in copilot-tokens/.
 
 services:
 
