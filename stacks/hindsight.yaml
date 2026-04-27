@@ -20,9 +20,14 @@ services:
   hindsight-api:
     image: ghcr.io/vectorize-io/hindsight-api:0.5.4-slim
     container_name: hindsight-api
+    # env_file: would be resolved at compose-parse time, which fails when
+    # Portainer parses the stack inside its own container without the host
+    # config dir mounted. Loading via a Docker secret defers path resolution
+    # to the daemon on the host, same way `hindsight_db_password` is wired.
+    entrypoint: ["sh", "-c", "set -a; . /run/secrets/hindsight_env; set +a; exec hindsight-api"]
     user: "568:568"
-    env_file:
-      - /mnt/spool/apps/config/hindsight/env
+    secrets:
+      - hindsight_env
     expose:
       - "8888"
     depends_on:
@@ -100,6 +105,8 @@ configs:
 secrets:
   hindsight_db_password:
     file: /mnt/spool/apps/config/hindsight/secrets/db_password
+  hindsight_env:
+    file: /mnt/spool/apps/config/hindsight/env
 
 networks:
   litellm:
