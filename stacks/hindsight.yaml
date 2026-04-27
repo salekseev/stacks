@@ -34,15 +34,20 @@ services:
       hindsight-db:
         condition: service_healthy
     networks:
+      - default
       - litellm
     restart: unless-stopped
 
   hindsight-cp:
     image: ghcr.io/vectorize-io/hindsight-control-plane:0.5.4
     container_name: hindsight-cp
+    # Same env_file-via-secret pattern as hindsight-api: CP needs the dataplane
+    # API key to authenticate as the tenant; loading via Docker secret keeps
+    # the key out of the compose file.
+    entrypoint: ["sh", "-c", "set -a; . /run/secrets/hindsight_cp_env; set +a; exec /app/start-all.sh"]
     user: "568:568"
-    environment:
-      - HINDSIGHT_CP_DATAPLANE_API_URL=http://hindsight-api:8888
+    secrets:
+      - hindsight_cp_env
     expose:
       - "9999"
     depends_on:
@@ -116,6 +121,8 @@ secrets:
     file: /mnt/spool/apps/config/hindsight/secrets/db_password
   hindsight_env:
     file: /mnt/spool/apps/config/hindsight/env
+  hindsight_cp_env:
+    file: /mnt/spool/apps/config/hindsight/cp_env
 
 networks:
   litellm:
