@@ -65,6 +65,10 @@ services:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD_FILE=/run/secrets/hindsight_db_password
       - PGDATA=/var/lib/postgresql/data/pgdata
+    configs:
+      - source: hindsight-db-init
+        target: /docker-entrypoint-initdb.d/01-extensions.sql
+        mode: 0444
     secrets:
       - hindsight_db_password
     volumes:
@@ -77,6 +81,12 @@ services:
     restart: unless-stopped
 
 configs:
+  hindsight-db-init:
+    content: |
+      CREATE EXTENSION IF NOT EXISTS vector;
+      CREATE EXTENSION IF NOT EXISTS vchord CASCADE;
+      CREATE EXTENSION IF NOT EXISTS pg_tokenizer CASCADE;
+      CREATE EXTENSION IF NOT EXISTS vchord_bm25 CASCADE;
   cloudflared:
     content: |
       tunnel: 5ebada53-82c5-40d9-baa6-030aa0d9ad75
