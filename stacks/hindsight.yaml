@@ -1,0 +1,107 @@
+# $schema: https://raw.githubusercontent.com/compose-spec/compose-spec/refs/heads/main/schema/compose-spec.json
+
+services:
+
+  cloudflared:
+    image: cloudflare/cloudflared:2026.3.0
+    container_name: cloudflared
+    command: --config /etc/cloudflared/config.yml tunnel run
+    user: 568:568
+    configs:
+      - source: cloudflared
+        target: /etc/cloudflared/config.yml
+        uid: "568"
+        gid: "568"
+        mode: 0440
+    volumes:
+      - /mnt/spool/apps/config/hindsight/cloudflared:/etc/cloudflared
+    restart: unless-stopped
+
+  hindsight-api:
+    image: ghcr.io/vectorize-io/hindsight-api:0.5.4-slim
+    container_name: hindsight-api
+    user: "568:568"
+    env_file:
+      - /mnt/spool/apps/config/hindsight/env
+    expose:
+      - "8888"
+    depends_on:
+      hindsight-db:
+        condition: service_healthy
+    networks:
+      - default
+      - litellm
+    restart: unless-stopped
+
+  hindsight-cp:
+    image: ghcr.io/vectorize-io/hindsight-control-plane:0.5.4
+    container_name: hindsight-cp
+    user: "568:568"
+    environment:
+      - HINDSIGHT_CP_DATAPLANE_API_URL=https://hindsight.alekseev.us/api
+    expose:
+      - "9999"
+    depends_on:
+      - hindsight-api
+    restart: unless-stopped
+
+  hindsight-db:
+    image: ghcr.io/tensorchord/vchord-suite:pg18-20260401
+    container_name: hindsight-db
+    command:
+      - "postgres"
+      - "-c"
+      - "max_connections=200"
+      - "-c"
+      - "shared_preload_libraries=vchord.so,vchord_bm25.so"
+    user: "568:568"
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD_FILE=/run/secrets/hindsight_db_password
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    secrets:
+      - hindsight_db_password
+    volumes:
+      - /mnt/spool/apps/data/hindsight/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+configs:
+  cloudflared:
+    content: |
+      tunnel: 5ebada53-82c5-40d9-baa6-030aa0d9ad75
+      credentials-file: /etc/cloudflared/creds/5ebada53-82c5-40d9-baa6-030aa0d9ad75.json
+      ingress:
+        - hostname: hindsight.alekseev.us
+          path: ^/api/mcp(/.*)?$
+          service: http://hindsight-api:8888
+        - hostname: hindsight.alekseev.us
+          path: ^/api(/.*)?$
+          service: http://hindsight-api:8888
+          access:
+            required: true
+            teamName: alekseev
+            audTag:
+              - 0fdf4f8a7569b70daecaf8e3707cdd144c7d76d250cdd321209d6519523c2216
+        - hostname: hindsight.alekseev.us
+          service: http://hindsight-cp:9999
+          access:
+            required: true
+            teamName: alekseev
+            audTag:
+              - 0fdf4f8a7569b70daecaf8e3707cdd144c7d76d250cdd321209d6519523c2216
+        - service: http_status:404
+
+secrets:
+  hindsight_db_password:
+    file: /mnt/spool/apps/config/hindsight/secrets/db_password
+
+networks:
+  litellm:
+    external: true
+    name: litellm
