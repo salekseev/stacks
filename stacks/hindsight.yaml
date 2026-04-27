@@ -34,7 +34,6 @@ services:
       hindsight-db:
         condition: service_healthy
     networks:
-      - default
       - litellm
     restart: unless-stopped
 
@@ -43,7 +42,7 @@ services:
     container_name: hindsight-cp
     user: "568:568"
     environment:
-      - HINDSIGHT_CP_DATAPLANE_API_URL=https://hindsight.alekseev.us/api
+      - HINDSIGHT_CP_DATAPLANE_API_URL=http://hindsight-api:8888
     expose:
       - "9999"
     depends_on:
