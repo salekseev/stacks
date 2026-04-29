@@ -46,8 +46,10 @@ services:
       HINDSIGHT_API_EMBEDDINGS_PROVIDER: openai
       HINDSIGHT_API_EMBEDDINGS_OPENAI_BASE_URL: http://litellm:4000/v1
       HINDSIGHT_API_EMBEDDINGS_OPENAI_MODEL: text-embedding-3-small
-      # API: reranker (pure math, no model)
-      HINDSIGHT_API_RERANKER_PROVIDER: rrf
+      # API: reranker via local litellm proxy (Cohere rerank-multilingual-v3.0)
+      HINDSIGHT_API_RERANKER_PROVIDER: litellm
+      HINDSIGHT_API_LITELLM_API_BASE: http://litellm:4000
+      HINDSIGHT_API_RERANKER_LITELLM_MODEL: rerank-multilingual-v3
       # API: tenant auth extension (key itself stays in secret env)
       HINDSIGHT_API_TENANT_EXTENSION: hindsight_api.extensions.builtin.tenant:ApiKeyTenantExtension
       # CP: dataplane URL (key stays in secret env)
