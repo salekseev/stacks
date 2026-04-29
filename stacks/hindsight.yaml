@@ -71,7 +71,7 @@ services:
       - "-c"
       - "max_connections=200"
       - "-c"
-      - "shared_preload_libraries=vchord.so,vchord_bm25.so"
+      - "shared_preload_libraries=vchord.so,vchord_bm25.so,pg_tokenizer.so"
     user: "568:568"
     environment:
       - POSTGRES_DB=postgres
