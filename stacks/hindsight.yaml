@@ -105,24 +105,13 @@ configs:
       tunnel: 5ebada53-82c5-40d9-baa6-030aa0d9ad75
       credentials-file: /etc/cloudflared/creds/5ebada53-82c5-40d9-baa6-030aa0d9ad75.json
       ingress:
+        # Dataplane (MCP, raw v1 API, FastAPI docs) — port 8888
         - hostname: hindsight.alekseev.us
-          path: ^/api/mcp(/.*)?$
+          path: ^/api/(mcp|v1|docs|redoc|openapi.json)(/.*)?$
           service: http://hindsight:8888
-        - hostname: hindsight.alekseev.us
-          path: ^/api(/.*)?$
-          service: http://hindsight:8888
-          access:
-            required: true
-            teamName: alekseev
-            audTag:
-              - 0fdf4f8a7569b70daecaf8e3707cdd144c7d76d250cdd321209d6519523c2216
+        # Everything else (dashboard UI + CP's own /api/* proxy routes) → CP on 9999
         - hostname: hindsight.alekseev.us
           service: http://hindsight:9999
-          access:
-            required: true
-            teamName: alekseev
-            audTag:
-              - 0fdf4f8a7569b70daecaf8e3707cdd144c7d76d250cdd321209d6519523c2216
         - service: http_status:404
 
 secrets:
