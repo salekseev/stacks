@@ -102,7 +102,8 @@ configs:
       -- pg_tokenizer/vchord_bm25 install into their own catalog schemas;
       -- hindsight calls tokenize() unqualified, so put both on search_path.
       ALTER DATABASE postgres SET search_path = public, tokenizer_catalog, bm25_catalog;
-      SELECT tokenizer_catalog.create_tokenizer('llmlingua2', $$ model = "llmlingua2" $$);
+      -- $$$$ → $$ inside compose (compose escapes a literal $ as $$).
+      SELECT tokenizer_catalog.create_tokenizer('llmlingua2', $$$$ model = "llmlingua2" $$$$);
   cloudflared:
     content: |
       tunnel: 5ebada53-82c5-40d9-baa6-030aa0d9ad75
