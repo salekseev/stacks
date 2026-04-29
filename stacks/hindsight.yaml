@@ -17,41 +17,50 @@ services:
       - /mnt/spool/apps/config/hindsight/cloudflared:/etc/cloudflared
     restart: unless-stopped
 
-  hindsight-api:
-    image: ghcr.io/vectorize-io/hindsight-api:0.5.4-slim
-    container_name: hindsight-api
+  hindsight:
+    # All-in-one image (standalone target): runs both hindsight-api on 8888 and
+    # the Next.js Control Plane on 9999 via /app/start-all.sh.
+    image: ghcr.io/vectorize-io/hindsight:0.5.6-slim
+    container_name: hindsight
     # env_file: would be resolved at compose-parse time, which fails when
     # Portainer parses the stack inside its own container without the host
     # config dir mounted. Loading via a Docker secret defers path resolution
     # to the daemon on the host, same way `hindsight_db_password` is wired.
-    entrypoint: ["sh", "-c", "set -a; . /run/secrets/hindsight_env; set +a; exec hindsight-api"]
+    # Order: docker `environment:` is set first; then the secret file is sourced
+    # via `set -a` so secrets cleanly override any defaults if needed. Keep only
+    # secrets in /run/secrets/hindsight_env; non-secrets live here.
+    entrypoint: ["sh", "-c", "set -a; . /run/secrets/hindsight_env; set +a; exec /app/start-all.sh"]
     user: "568:568"
     secrets:
       - hindsight_env
+    environment:
+      # API: search backends + reverse-proxy subpath
+      HINDSIGHT_API_VECTOR_EXTENSION: vchord
+      HINDSIGHT_API_TEXT_SEARCH_EXTENSION: vchord
+      HINDSIGHT_API_BASE_PATH: /api
+      # API: LLM via local litellm proxy
+      HINDSIGHT_API_LLM_PROVIDER: openai
+      HINDSIGHT_API_LLM_BASE_URL: http://litellm:4000/v1
+      HINDSIGHT_API_LLM_MODEL: gpt-5-mini
+      # API: embeddings via local litellm proxy
+      HINDSIGHT_API_EMBEDDINGS_PROVIDER: openai
+      HINDSIGHT_API_EMBEDDINGS_OPENAI_BASE_URL: http://litellm:4000/v1
+      HINDSIGHT_API_EMBEDDINGS_OPENAI_MODEL: text-embedding-3-small
+      # API: reranker (pure math, no model)
+      HINDSIGHT_API_RERANKER_PROVIDER: rrf
+      # API: tenant auth extension (key itself stays in secret env)
+      HINDSIGHT_API_TENANT_EXTENSION: hindsight_api.extensions.builtin.tenant:ApiKeyTenantExtension
+      # CP: dataplane URL (key stays in secret env)
+      HINDSIGHT_CP_DATAPLANE_API_URL: http://localhost:8888/api
     expose:
       - "8888"
+      - "9999"
     depends_on:
       hindsight-db:
         condition: service_healthy
     networks:
       - default
       - litellm
-    restart: unless-stopped
-
-  hindsight-cp:
-    image: ghcr.io/vectorize-io/hindsight-control-plane:0.5.4
-    container_name: hindsight-cp
-    # Same env_file-via-secret pattern as hindsight-api: CP needs the dataplane
-    # API key to authenticate as the tenant; loading via Docker secret keeps
-    # the key out of the compose file.
-    entrypoint: ["sh", "-c", "set -a; . /run/secrets/hindsight_cp_env; set +a; exec /app/start-all.sh"]
-    user: "568:568"
-    secrets:
-      - hindsight_cp_env
-    expose:
-      - "9999"
-    depends_on:
-      - hindsight-api
     restart: unless-stopped
 
   hindsight-db:
@@ -87,10 +96,10 @@ services:
 configs:
   hindsight-db-init:
     content: |
-      CREATE EXTENSION IF NOT EXISTS vector;
       CREATE EXTENSION IF NOT EXISTS vchord CASCADE;
       CREATE EXTENSION IF NOT EXISTS pg_tokenizer CASCADE;
       CREATE EXTENSION IF NOT EXISTS vchord_bm25 CASCADE;
+      SELECT create_tokenizer('llmlingua2', $$ model = "llmlingua2" $$);
   cloudflared:
     content: |
       tunnel: 5ebada53-82c5-40d9-baa6-030aa0d9ad75
@@ -98,17 +107,17 @@ configs:
       ingress:
         - hostname: hindsight.alekseev.us
           path: ^/api/mcp(/.*)?$
-          service: http://hindsight-api:8888
+          service: http://hindsight:8888
         - hostname: hindsight.alekseev.us
           path: ^/api(/.*)?$
-          service: http://hindsight-api:8888
+          service: http://hindsight:8888
           access:
             required: true
             teamName: alekseev
             audTag:
               - 0fdf4f8a7569b70daecaf8e3707cdd144c7d76d250cdd321209d6519523c2216
         - hostname: hindsight.alekseev.us
-          service: http://hindsight-cp:9999
+          service: http://hindsight:9999
           access:
             required: true
             teamName: alekseev
@@ -121,8 +130,6 @@ secrets:
     file: /mnt/spool/apps/config/hindsight/secrets/db_password
   hindsight_env:
     file: /mnt/spool/apps/config/hindsight/env
-  hindsight_cp_env:
-    file: /mnt/spool/apps/config/hindsight/cp_env
 
 networks:
   litellm:
