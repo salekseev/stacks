@@ -42,10 +42,15 @@ services:
       HINDSIGHT_API_LLM_PROVIDER: openai
       HINDSIGHT_API_LLM_BASE_URL: http://litellm:4000/v1
       HINDSIGHT_API_LLM_MODEL: gpt-5-mini
-      # API: retain (fact extraction) — gpt-4o-mini is rank 6 on the Hindsight
-      # retain leaderboard (74.3 / 9 s) vs gpt-5-mini rank 12 (63.0 / 68 s).
+      # API: retain (fact extraction) — gpt-4o-mini ranks #6 on Hindsight's
+      # retain leaderboard but Copilot caps it at 12,288 prompt tokens. Shrink
+      # chunk size + completion budget to stay under that ceiling. If we hit
+      # 400s in production, switch to claude-haiku-4.5 (200K context).
       HINDSIGHT_API_RETAIN_LLM_MODEL: gpt-4o-mini
       HINDSIGHT_API_RETAIN_LLM_MAX_CONCURRENT: "8"
+      HINDSIGHT_API_RETAIN_LLM_MAX_RETRIES: "5"
+      HINDSIGHT_API_RETAIN_CHUNK_SIZE: "1500"
+      HINDSIGHT_API_RETAIN_MAX_COMPLETION_TOKENS: "4000"
       # DB: bump asyncpg client timeout — pgvector ANN query in retain phase 1
       # exceeded the 60 s default once the facts table grew.
       HINDSIGHT_API_DB_COMMAND_TIMEOUT: "180"
