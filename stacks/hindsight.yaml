@@ -89,6 +89,10 @@ services:
       - "max_connections=200"
       - "-c"
       - "shared_preload_libraries=vchord.so,vchord_bm25.so,pg_tokenizer.so"
+    # Docker default /dev/shm is 64 MB; PG parallel workers allocate shm segs
+    # for hash/sort/agg and exhaust it under concurrent /stats fanout, raising
+    # "could not resize shared memory segment ... No space left on device".
+    shm_size: 2gb
     user: "568:568"
     environment:
       - POSTGRES_DB=postgres
