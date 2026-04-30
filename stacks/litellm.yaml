@@ -35,6 +35,14 @@ services:
       - "--port=80"
       - "--max-concurrent-requests=64"
       - "--max-batch-tokens=16384"
+      # Hindsight ships the full candidate set in one /rerank call (200+ docs).
+      # Default 2 MB body limit overflows; bump to 32 MB. `auto-truncate` caps
+      # any single doc to the model's 512-token window so we don't reject batches
+      # that contain one oversized fact.
+      - "--payload-limit=33554432"
+      - "--auto-truncate"
+      # Match Hindsight's HINDSIGHT_API_RERANKER_TEI_BATCH_SIZE (default TEI cap is 32).
+      - "--max-client-batch-size=64"
     environment:
       HF_HOME: /data
     volumes:
