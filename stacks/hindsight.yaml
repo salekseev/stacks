@@ -38,10 +38,17 @@ services:
       HINDSIGHT_API_VECTOR_EXTENSION: vchord
       HINDSIGHT_API_TEXT_SEARCH_EXTENSION: vchord
       HINDSIGHT_API_BASE_PATH: /api
-      # API: LLM via local litellm proxy
+      # API: default LLM (recall, reflect, consolidation) via local litellm proxy
       HINDSIGHT_API_LLM_PROVIDER: openai
       HINDSIGHT_API_LLM_BASE_URL: http://litellm:4000/v1
       HINDSIGHT_API_LLM_MODEL: gpt-5-mini
+      # API: retain (fact extraction) — gpt-4o-mini is rank 6 on the Hindsight
+      # retain leaderboard (74.3 / 9 s) vs gpt-5-mini rank 12 (63.0 / 68 s).
+      HINDSIGHT_API_RETAIN_LLM_MODEL: gpt-4o-mini
+      HINDSIGHT_API_RETAIN_LLM_MAX_CONCURRENT: "8"
+      # DB: bump asyncpg client timeout — pgvector ANN query in retain phase 1
+      # exceeded the 60 s default once the facts table grew.
+      HINDSIGHT_API_DB_COMMAND_TIMEOUT: "180"
       # API: embeddings via local litellm proxy
       HINDSIGHT_API_EMBEDDINGS_PROVIDER: openai
       HINDSIGHT_API_EMBEDDINGS_OPENAI_BASE_URL: http://litellm:4000/v1
