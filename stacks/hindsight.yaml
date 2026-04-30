@@ -34,6 +34,9 @@ services:
     secrets:
       - hindsight_env
     environment:
+      # Worker identity: stable ID survives restarts so the worker can reclaim
+      # its own in-progress tasks (avoids dead-worker stuck-task issue #624).
+      HINDSIGHT_API_WORKER_ID: hindsight-worker-1
       # API: search backends + reverse-proxy subpath
       HINDSIGHT_API_VECTOR_EXTENSION: vchord
       HINDSIGHT_API_TEXT_SEARCH_EXTENSION: vchord
