@@ -27,7 +27,7 @@ services:
     restart: unless-stopped
 
   tei-reranker:
-    image: ghcr.io/huggingface/text-embeddings-inference:86-1.5
+    image: ghcr.io/huggingface/text-embeddings-inference:86-1.7
     container_name: tei-reranker
     user: "568:568"
     command:
