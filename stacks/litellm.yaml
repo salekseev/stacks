@@ -26,6 +26,38 @@ services:
       - litellm
     restart: unless-stopped
 
+  tei-reranker:
+    image: ghcr.io/huggingface/text-embeddings-inference:86-1.5
+    container_name: tei-reranker
+    user: "568:568"
+    command:
+      - "--model-id=cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
+      - "--port=80"
+      - "--max-concurrent-requests=64"
+      - "--max-batch-tokens=16384"
+    environment:
+      HF_HOME: /data
+    volumes:
+      - /mnt/spool/apps/data/tei/cache:/data
+    expose:
+      - "80"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    networks:
+      - litellm
+    restart: unless-stopped
+
 networks:
   litellm:
     name: litellm
