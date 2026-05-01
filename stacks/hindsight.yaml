@@ -146,6 +146,7 @@ services:
     tmpfs:
       - /app/cache:rw,noexec,nosuid,nodev,size=128m,uid=101,gid=101,mode=1777
       - /app/migrations:rw,noexec,nosuid,nodev,size=64m,uid=101,gid=101,mode=1777
+      - /.npm:rw,noexec,nosuid,nodev,size=64m,uid=101,gid=101,mode=1777
     volumes:
       - /mnt/spool/apps/config/hindsight/litellm/config.yaml:/app/config.yaml:ro
       - /mnt/spool/apps/config/hindsight/litellm/copilot-tokens:/copilot-tokens
