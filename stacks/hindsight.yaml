@@ -139,9 +139,13 @@ services:
     command: ["--config", "/app/config.yaml", "--port", "4000"]
     user: "568:568"
     environment:
-      - GITHUB_COPILOT_TOKEN_DIR=/copilot-tokens
-      - STORE_MODEL_IN_DB=False
-      - DISABLE_ADMIN_UI=True
+      GITHUB_COPILOT_TOKEN_DIR: "/copilot-tokens"
+      PRISMA_BINARY_CACHE_DIR: "/app/cache/prisma-python/binaries"
+      XDG_CACHE_HOME: "/app/cache"
+      LITELLM_MIGRATION_DIR: "/app/migrations"
+    tmpfs:
+      - /app/cache:rw,noexec,nosuid,nodev,size=128m,uid=101,gid=101,mode=1777
+      - /app/migrations:rw,noexec,nosuid,nodev,size=64m,uid=101,gid=101,mode=1777
     volumes:
       - /mnt/spool/apps/config/hindsight/litellm/config.yaml:/app/config.yaml:ro
       - /mnt/spool/apps/config/hindsight/litellm/copilot-tokens:/copilot-tokens
