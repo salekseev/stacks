@@ -52,9 +52,6 @@ services:
       HINDSIGHT_API_EMBEDDINGS_PROVIDER: openai
       HINDSIGHT_API_EMBEDDINGS_OPENAI_BASE_URL: http://hindsight-litellm:4000/v1
       HINDSIGHT_API_EMBEDDINGS_OPENAI_MODEL: text-embedding-3-small
-      # API: reranker via self-hosted TEI cross-encoder on the litellm network.
-      # Cohere via litellm kept in /mnt/spool/apps/config/litellm/config.yaml as
-      # short-term rollback path; flip RERANKER_PROVIDER back to litellm to revert.
       HINDSIGHT_API_RERANKER_PROVIDER: tei
       HINDSIGHT_API_RERANKER_TEI_URL: http://hindsight-tei-reranker:80
       HINDSIGHT_API_RERANKER_TEI_BATCH_SIZE: "64"
@@ -69,8 +66,6 @@ services:
     depends_on:
       hindsight-db:
         condition: service_healthy
-    networks:
-      - default
     restart: unless-stopped
 
   hindsight-db:
@@ -240,8 +235,3 @@ secrets:
     file: /mnt/spool/apps/config/hindsight/secrets/db_password
   hindsight_env:
     file: /mnt/spool/apps/config/hindsight/env
-
-networks:
-  litellm:
-    external: true
-    name: litellm
