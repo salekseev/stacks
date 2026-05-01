@@ -169,7 +169,7 @@ services:
     command:
       - "--model-id=cross-encoder/ms-marco-MiniLM-L-6-v2"
       - "--port=80"
-      - "--max-concurrent-requests=64"
+      - "--max-concurrent-requests=256"
       - "--max-batch-tokens=4096"
       - "--payload-limit=33554432"
       - "--auto-truncate"
