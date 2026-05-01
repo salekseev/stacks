@@ -134,10 +134,19 @@ services:
     restart: unless-stopped
 
   litellm:
-    image: ghcr.io/berriai/litellm-database:main-v1.83.10-stable
+    image: ghcr.io/berriai/litellm-non_root:v1.83.10-stable
     container_name: hindsight-litellm
-    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    command:
+      - "--port"
+      - "4000"
+      - "--config"
+      - "/app/config.yaml"
     user: "568:568"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     environment:
       GITHUB_COPILOT_TOKEN_DIR: "/copilot-tokens"
       PRISMA_BINARY_CACHE_DIR: "/app/cache/prisma-python/binaries"
