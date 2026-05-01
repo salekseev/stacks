@@ -50,13 +50,13 @@ services:
       HINDSIGHT_API_DB_COMMAND_TIMEOUT: "180"
       # API: embeddings via local litellm proxy
       HINDSIGHT_API_EMBEDDINGS_PROVIDER: openai
-      HINDSIGHT_API_EMBEDDINGS_OPENAI_BASE_URL: http://litellm:4000/v1
+      HINDSIGHT_API_EMBEDDINGS_OPENAI_BASE_URL: http://hindsight-litellm:4000/v1
       HINDSIGHT_API_EMBEDDINGS_OPENAI_MODEL: text-embedding-3-small
       # API: reranker via self-hosted TEI cross-encoder on the litellm network.
       # Cohere via litellm kept in /mnt/spool/apps/config/litellm/config.yaml as
       # short-term rollback path; flip RERANKER_PROVIDER back to litellm to revert.
       HINDSIGHT_API_RERANKER_PROVIDER: tei
-      HINDSIGHT_API_RERANKER_TEI_URL: http://tei-reranker:80
+      HINDSIGHT_API_RERANKER_TEI_URL: http://hindsight-tei-reranker:80
       HINDSIGHT_API_RERANKER_TEI_BATCH_SIZE: "64"
       HINDSIGHT_API_RERANKER_TEI_MAX_CONCURRENT: "4"
       # API: tenant auth extension (key itself stays in secret env)
@@ -71,7 +71,6 @@ services:
         condition: service_healthy
     networks:
       - default
-      - litellm
     restart: unless-stopped
 
   hindsight-db:
@@ -134,6 +133,74 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  litellm:
+    image: ghcr.io/berriai/litellm-database:main-v1.83.10-stable
+    container_name: hindsight-litellm
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    user: "568:568"
+    environment:
+      - GITHUB_COPILOT_TOKEN_DIR=/copilot-tokens
+      - STORE_MODEL_IN_DB=False
+      - DISABLE_ADMIN_UI=True
+    volumes:
+      - /mnt/spool/apps/config/hindsight/litellm/config.yaml:/app/config.yaml:ro
+      - /mnt/spool/apps/config/hindsight/litellm/copilot-tokens:/copilot-tokens
+    expose:
+      - "4000"
+    depends_on:
+      hindsight-db:
+        condition: service_healthy
+    healthcheck:  # Defines the health check configuration for the container
+      test:
+        - CMD-SHELL
+        - python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')"  # Command to execute for health check
+      interval: 30s  # Perform health check every 30 seconds
+      timeout: 10s   # Health check command times out after 10 seconds
+      retries: 3     # Retry up to 3 times if health check fails
+      start_period: 40s  # Wait 40 seconds after container start before beginning health checks
+    restart: unless-stopped
+
+  tei-reranker:
+    image: ghcr.io/huggingface/text-embeddings-inference:86-1.7
+    container_name: hindsight-tei-reranker
+    user: "568:568"
+    command:
+      # Primary: ModernBERT-based reranker, 8K context, beats bge-large at ~150M params.
+      # Rollback: cross-encoder/ms-marco-MiniLM-L-6-v2 (Hindsight leaderboard #1, English-only,
+      # 512-token cap). Swap --model-id and recreate if gte-modernbert misbehaves.
+      - "--model-id=Alibaba-NLP/gte-reranker-modernbert-base"
+      - "--port=80"
+      - "--max-concurrent-requests=64"
+      - "--max-batch-tokens=16384"
+      # Hindsight ships the full candidate set in one /rerank call (200+ docs).
+      # Default 2 MB body limit overflows; bump to 32 MB. `auto-truncate` caps
+      # any single doc to the model's context window.
+      - "--payload-limit=33554432"
+      - "--auto-truncate"
+      # Match Hindsight's HINDSIGHT_API_RERANKER_TEI_BATCH_SIZE (default TEI cap is 32).
+      - "--max-client-batch-size=64"
+    environment:
+      HF_HOME: /data
+    volumes:
+      - /mnt/spool/apps/data/hindsight/tei/cache:/data
+    expose:
+      - "80"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+
 configs:
   hindsight-db-init:
     content: |
@@ -157,6 +224,8 @@ configs:
         # Everything else (dashboard UI + CP's own /api/* proxy routes) → CP on 9999
         - hostname: hindsight.alekseev.us
           service: http://hindsight:9999
+        - hostname: hindsight-litellm.alekseev.us
+          service: http://hindsight-litellm:4000
         - service: http_status:404
 
 secrets:
