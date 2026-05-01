@@ -163,20 +163,14 @@ services:
     restart: unless-stopped
 
   tei-reranker:
-    image: ghcr.io/huggingface/text-embeddings-inference:86-1.7
+    image: ghcr.io/huggingface/text-embeddings-inference:86-1.9
     container_name: hindsight-tei-reranker
     user: "568:568"
     command:
-      # Primary: ModernBERT-based reranker, 8K context, beats bge-large at ~150M params.
-      # Rollback: cross-encoder/ms-marco-MiniLM-L-6-v2 (Hindsight leaderboard #1, English-only,
-      # 512-token cap). Swap --model-id and recreate if gte-modernbert misbehaves.
-      - "--model-id=Alibaba-NLP/gte-reranker-modernbert-base"
+      - "--model-id=cross-encoder/ms-marco-MiniLM-L-6-v2"
       - "--port=80"
       - "--max-concurrent-requests=64"
-      - "--max-batch-tokens=16384"
-      # Hindsight ships the full candidate set in one /rerank call (200+ docs).
-      # Default 2 MB body limit overflows; bump to 32 MB. `auto-truncate` caps
-      # any single doc to the model's context window.
+      - "--max-batch-tokens=4096"
       - "--payload-limit=33554432"
       - "--auto-truncate"
       # Match Hindsight's HINDSIGHT_API_RERANKER_TEI_BATCH_SIZE (default TEI cap is 32).
