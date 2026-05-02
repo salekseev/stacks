@@ -42,15 +42,15 @@ services:
       HINDSIGHT_API_TEXT_SEARCH_EXTENSION: vchord
       HINDSIGHT_API_BASE_PATH: /api
       # API: default LLM (recall, reflect, consolidation) via local litellm proxy
-      HINDSIGHT_API_LLM_PROVIDER: litellm
-      HINDSIGHT_API_LLM_BASE_URL: http://hindsight-litellm:4000
-      HINDSIGHT_API_LLM_MODEL: gemma-4-e4b
+      HINDSIGHT_API_LLM_PROVIDER: openai
+      HINDSIGHT_API_LLM_BASE_URL: http://hindsight-litellm:4000/v1
+      HINDSIGHT_API_LLM_MODEL: gpt-5.4-mini
       # DB: bump asyncpg client timeout — pgvector ANN query in retain phase 1
       # exceeded the 60 s default once the facts table grew.
       HINDSIGHT_API_DB_COMMAND_TIMEOUT: "180"
       # API: embeddings via local litellm proxy
-      HINDSIGHT_API_EMBEDDINGS_PROVIDER: litellm
-      HINDSIGHT_API_EMBEDDINGS_OPENAI_BASE_URL: http://hindsight-litellm:4000
+      HINDSIGHT_API_EMBEDDINGS_PROVIDER: openai
+      HINDSIGHT_API_EMBEDDINGS_OPENAI_BASE_URL: http://hindsight-litellm:4000/v1
       HINDSIGHT_API_EMBEDDINGS_OPENAI_MODEL: text-embedding-3-small
       HINDSIGHT_API_RERANKER_PROVIDER: tei
       HINDSIGHT_API_RERANKER_TEI_URL: http://hindsight-tei-reranker:80
