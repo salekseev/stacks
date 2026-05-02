@@ -43,7 +43,7 @@ services:
       HINDSIGHT_API_BASE_PATH: /api
       # API: default LLM (recall, reflect, consolidation) via local litellm proxy
       HINDSIGHT_API_LLM_PROVIDER: openai
-      HINDSIGHT_API_LLM_BASE_URL: http://litellm:4000/v1
+      HINDSIGHT_API_LLM_BASE_URL: http://hindsight-litellm:4000/v1
       HINDSIGHT_API_LLM_MODEL: gemma-4-e4b
       # DB: bump asyncpg client timeout — pgvector ANN query in retain phase 1
       # exceeded the 60 s default once the facts table grew.
