@@ -129,7 +129,7 @@ services:
     restart: unless-stopped
 
   litellm:
-    image: ghcr.io/berriai/litellm-non_root:v1.83.10-stable
+    image: ghcr.io/berriai/litellm-non_root:v1.83.14-stable
     container_name: hindsight-litellm
     command:
       - "--port"
