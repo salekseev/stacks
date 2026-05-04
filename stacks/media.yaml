@@ -34,7 +34,7 @@ services:
     restart: unless-stopped
 
   qbittorrent:
-    image: ghcr.io/hotio/qbittorrent:release-5.1.4
+    image: ghcr.io/hotio/qbittorrent:release-5.2.0
     container_name: qbittorrent
     cap_add:
       - NET_ADMIN
@@ -61,7 +61,7 @@ services:
     restart: unless-stopped
 
   qui:
-    image: ghcr.io/hotio/qui:release-v1.16.1
+    image: ghcr.io/hotio/qui:release-v1.17.0
     container_name: qui
     env_file:
       - stack.env
@@ -77,7 +77,7 @@ services:
     restart: unless-stopped
 
   autobrr:
-    image: ghcr.io/s0up4200/autobrr-distroless:v1.75.1
+    image: ghcr.io/s0up4200/autobrr-distroless:v1.77.0
     container_name: autobrr
     user: nobody
     env_file:
@@ -171,7 +171,7 @@ services:
     restart: unless-stopped
 
   recyclarr:
-    image: ghcr.io/recyclarr/recyclarr:8.5.1
+    image: ghcr.io/recyclarr/recyclarr:8.6.0
     container_name: recyclarr
     user: 1000:1000
     env_file:
@@ -188,7 +188,7 @@ services:
     restart: unless-stopped
 
   seerr:
-    image: ghcr.io/seerr-team/seerr:v3.1.0
+    image: ghcr.io/seerr-team/seerr:v3.2.0
     container_name: seerr
     user: 1000:1000
     env_file:
