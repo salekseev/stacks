@@ -34,6 +34,16 @@
       ]
     },
     {
+      "description": "Extract version from text-embeddings-inference tags (compute-capability-version format, e.g. 86-1.9)",
+      "matchDatasources": [
+        "docker"
+      ],
+      "versionCompatibility": "^\\d+-(?<version>.*)$",
+      "matchPackageNames": [
+        "ghcr.io/huggingface/text-embeddings-inference"
+      ]
+    },
+    {
       "description": "Group minor updates together",
       "matchDatasources": [
         "docker",
