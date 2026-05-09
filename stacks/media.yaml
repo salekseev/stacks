@@ -61,7 +61,7 @@ services:
     restart: unless-stopped
 
   qui:
-    image: ghcr.io/hotio/qui:release-v1.17.0
+    image: ghcr.io/hotio/qui:release-v1.18.0
     container_name: qui
     env_file:
       - stack.env
