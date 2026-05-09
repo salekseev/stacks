@@ -50,7 +50,7 @@ services:
       - VPN_PIA_PASS=${PIA_PASSWORD}
       - VPN_PIA_PREFERRED_REGION=ca
       - VPN_AUTO_PORT_FORWARD=true
-      - VPN_PIA_PORT_FORWARD_PERSIST=true
+      - VPN_PIA_PORT_FORWARD_PERSIST=false
     volumes:
       - /mnt/spool/apps/config/qbittorrent:/config
       - /mnt/dpool/media:/media
