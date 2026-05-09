@@ -18,7 +18,7 @@ services:
     restart: unless-stopped
 
   honcho-api:
-    image: ghcr.io/plastic-labs/honcho:latest
+    image: ghcr.io/plastic-labs/honcho:latest@sha256:a8c4a8dcead76ef9b580559469db4f140eae2c51510ee7d7d3a1485576fee554
     container_name: honcho-api
     entrypoint: ["sh", "docker/entrypoint.sh"]
     user: "568:568"
@@ -37,7 +37,7 @@ services:
     restart: unless-stopped
 
   honcho-deriver:
-    image: ghcr.io/plastic-labs/honcho:latest
+    image: ghcr.io/plastic-labs/honcho:latest@sha256:a8c4a8dcead76ef9b580559469db4f140eae2c51510ee7d7d3a1485576fee554
     container_name: honcho-deriver
     entrypoint: ["/app/.venv/bin/python", "-m", "src.deriver"]
     user: "568:568"
