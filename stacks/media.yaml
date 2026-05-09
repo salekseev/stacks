@@ -208,7 +208,7 @@ services:
     restart: unless-stopped
 
   tautulli:
-    image: ghcr.io/tautulli/tautulli:v2.17.0
+    image: ghcr.io/tautulli/tautulli:v2.17.1
     container_name: tautulli
     env_file:
       - stack.env
