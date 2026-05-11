@@ -131,16 +131,17 @@ services:
   litellm:
     image: ghcr.io/berriai/litellm-non_root:v1.83.14-stable
     container_name: hindsight-litellm
-    command:
-      - "--port"
-      - "4000"
-      - "--config"
-      - "/app/config.yaml"
+    entrypoint:
+      - sh
+      - -c
+      - "set -a; . /run/secrets/hindsight_env; set +a; exec litellm --port 4000 --config /app/config.yaml"
     user: "568:568"
     cap_drop:
       - ALL
     security_opt:
       - no-new-privileges:true
+    secrets:
+      - hindsight_env
     environment:
       GITHUB_COPILOT_TOKEN_DIR: "/copilot-tokens"
       PRISMA_BINARY_CACHE_DIR: "/app/cache/prisma-python/binaries"
@@ -152,14 +153,17 @@ services:
     volumes:
       - /mnt/spool/apps/config/hindsight/litellm/config.yaml:/app/config.yaml:ro
       - /mnt/spool/apps/config/hindsight/litellm/copilot-tokens:/copilot-tokens
-    healthcheck:  # Defines the health check configuration for the container
+    depends_on:
+      hindsight-db:
+        condition: service_healthy
+    healthcheck:
       test:
         - CMD-SHELL
-        - python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')"  # Command to execute for health check
-      interval: 30s  # Perform health check every 30 seconds
-      timeout: 10s   # Health check command times out after 10 seconds
-      retries: 3     # Retry up to 3 times if health check fails
-      start_period: 40s  # Wait 40 seconds after container start before beginning health checks
+        - python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')"
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
     restart: unless-stopped
 
   tei-reranker:
@@ -208,6 +212,7 @@ configs:
       ALTER DATABASE postgres SET search_path = public, tokenizer_catalog, bm25_catalog;
       -- $$$$ → $$ inside compose (compose escapes a literal $ as $$).
       SELECT tokenizer_catalog.create_tokenizer('llmlingua2', $$$$ model = "llmlingua2" $$$$);
+      CREATE SCHEMA IF NOT EXISTS litellm AUTHORIZATION postgres;
   cloudflared:
     content: |
       tunnel: 5ebada53-82c5-40d9-baa6-030aa0d9ad75
