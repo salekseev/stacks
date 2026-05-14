@@ -48,10 +48,9 @@ services:
       # DB: bump asyncpg client timeout — pgvector ANN query in retain phase 1
       # exceeded the 60 s default once the facts table grew.
       HINDSIGHT_API_DB_COMMAND_TIMEOUT: "180"
-      # API: embeddings via local litellm proxy
-      HINDSIGHT_API_EMBEDDINGS_PROVIDER: openai
-      HINDSIGHT_API_EMBEDDINGS_OPENAI_BASE_URL: http://hindsight-litellm:4000/v1
-      HINDSIGHT_API_EMBEDDINGS_OPENAI_MODEL: text-embedding-3-small
+      # API: embeddings via local TEI (BAAI/bge-small-en-v1.5, 384d)
+      HINDSIGHT_API_EMBEDDINGS_PROVIDER: tei
+      HINDSIGHT_API_EMBEDDINGS_TEI_URL: http://hindsight-tei-embed:80
       HINDSIGHT_API_RERANKER_PROVIDER: tei
       HINDSIGHT_API_RERANKER_TEI_URL: http://hindsight-tei-reranker:80
       HINDSIGHT_API_RERANKER_TEI_BATCH_SIZE: "64"
@@ -164,6 +163,38 @@ services:
       timeout: 10s
       retries: 3
       start_period: 90s
+    restart: unless-stopped
+
+  tei-embed:
+    image: ghcr.io/huggingface/text-embeddings-inference:86-1.9.3
+    container_name: hindsight-tei-embed
+    user: "568:568"
+    command:
+      - "--model-id=BAAI/bge-small-en-v1.5"
+      - "--port=80"
+      - "--max-concurrent-requests=256"
+      - "--max-batch-tokens=4096"
+      - "--auto-truncate"
+      - "--max-client-batch-size=64"
+    environment:
+      HF_HOME: /data
+    volumes:
+      - /mnt/spool/apps/data/hindsight/tei-embed/cache:/data
+    expose:
+      - "80"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
     restart: unless-stopped
 
   tei-reranker:
