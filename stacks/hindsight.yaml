@@ -20,7 +20,7 @@ services:
   hindsight:
     # All-in-one image (standalone target): runs both hindsight-api on 8888 and
     # the Next.js Control Plane on 9999 via /app/start-all.sh.
-    image: ghcr.io/vectorize-io/hindsight:0.6.1-slim
+    image: ghcr.io/vectorize-io/hindsight:0.6.2-slim
     container_name: hindsight
     # env_file: would be resolved at compose-parse time, which fails when
     # Portainer parses the stack inside its own container without the host
