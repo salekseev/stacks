@@ -43,12 +43,12 @@ services:
     env_file:
       - stack.env
     environment:
-      - LIBTORRENT=v1
+      - LIBTORRENT=v2
       - VPN_ENABLED=true
       - VPN_PROVIDER=pia
       - VPN_PIA_USER=${PIA_USERNAME}
       - VPN_PIA_PASS=${PIA_PASSWORD}
-      - VPN_PIA_PREFERRED_REGION=ca_toronto
+      - VPN_PIA_PREFERRED_REGION=ca
       - VPN_AUTO_PORT_FORWARD=true
       - VPN_PIA_PORT_FORWARD_PERSIST=false
     volumes:
