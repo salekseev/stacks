@@ -55,6 +55,9 @@ services:
     volumes:
       - /mnt/spool/apps/config/qbittorrent:/config
       - /mnt/dpool/media:/media
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+      - net.ipv6.conf.all.disable_ipv6=1
     expose:
       - "8080"
     networks:
