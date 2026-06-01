@@ -34,7 +34,7 @@ services:
     restart: unless-stopped
 
   qbittorrent:
-    image: ghcr.io/hotio/qbittorrent:release-5.1.0
+    image: ghcr.io/hotio/qbittorrent:release-5.2.1
     container_name: qbittorrent
     cap_add:
       - NET_ADMIN

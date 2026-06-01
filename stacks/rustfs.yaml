@@ -30,7 +30,7 @@ services:
       start_period: 15s
 
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.152.1
+    image: otel/opentelemetry-collector-contrib:0.153.0
     container_name: otel-collector
     network_mode: "service:boringtun"
     restart: unless-stopped
