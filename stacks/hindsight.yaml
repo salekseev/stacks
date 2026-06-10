@@ -41,10 +41,13 @@ services:
       HINDSIGHT_API_VECTOR_EXTENSION: vchord
       HINDSIGHT_API_TEXT_SEARCH_EXTENSION: vchord
       HINDSIGHT_API_BASE_PATH: /api
-      # API: default LLM (recall, reflect, consolidation) via local litellm proxy
+      # API: default LLM (recall, reflect, consolidation) via local litellm proxy.
+      # `hindsight-default` is a litellm alias (config.yaml on the host) routing
+      # to chatgpt/gpt-5.4-mini with fallback to qwen3.6-35b-think-general, so
+      # provider swaps don't require touching this stack.
       HINDSIGHT_API_LLM_PROVIDER: openai
       HINDSIGHT_API_LLM_BASE_URL: http://hindsight-litellm:4000/v1
-      HINDSIGHT_API_LLM_MODEL: qwen3.6-35b-think-general
+      HINDSIGHT_API_LLM_MODEL: hindsight-default
       # DB: bump asyncpg client timeout — pgvector ANN query in retain phase 1
       # exceeded the 60 s default once the facts table grew.
       HINDSIGHT_API_DB_COMMAND_TIMEOUT: "180"
@@ -128,7 +131,7 @@ services:
     restart: unless-stopped
 
   litellm:
-    image: ghcr.io/berriai/litellm-non_root:v1.83.14-stable
+    image: ghcr.io/berriai/litellm-non_root:v1.88.1
     container_name: hindsight-litellm
     entrypoint:
       - sh
@@ -143,6 +146,10 @@ services:
       - hindsight_env
     environment:
       GITHUB_COPILOT_TOKEN_DIR: "/copilot-tokens"
+      # ChatGPT-subscription (Codex OAuth) tokens for the native chatgpt/
+      # provider. First use triggers a device-code login printed to container
+      # logs; auth.json then auto-refreshes, so the mount must stay writable.
+      CHATGPT_TOKEN_DIR: "/chatgpt-tokens"
       PRISMA_BINARY_CACHE_DIR: "/app/cache/prisma-python/binaries"
       XDG_CACHE_HOME: "/app/cache"
       LITELLM_MIGRATION_DIR: "/app/migrations"
@@ -152,6 +159,7 @@ services:
     volumes:
       - /mnt/spool/apps/config/hindsight/litellm/config.yaml:/app/config.yaml:ro
       - /mnt/spool/apps/config/hindsight/litellm/copilot-tokens:/copilot-tokens
+      - /mnt/spool/apps/config/hindsight/litellm/chatgpt-tokens:/chatgpt-tokens
     depends_on:
       hindsight-db:
         condition: service_healthy
