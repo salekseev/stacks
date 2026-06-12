@@ -48,6 +48,15 @@ services:
       HINDSIGHT_API_LLM_PROVIDER: openai
       HINDSIGHT_API_LLM_BASE_URL: http://hindsight-litellm:4000/v1
       HINDSIGHT_API_LLM_MODEL: hindsight-default
+      # LLM timeout/concurrency tuned for local qwen via llama.cpp: thinking-
+      # enabled generation at ~68 t/s needs minutes per fact-extraction call
+      # (default timeout is 120 s), and llama-server runs a single slot
+      # (--parallel 1) so concurrent calls would queue there and burn their
+      # timeout waiting. litellm's qwen deployment times out at 540 s, inside
+      # this 600 s window, so the gpt-5.4-mini fallback can still fire before
+      # hindsight hangs up.
+      HINDSIGHT_API_LLM_TIMEOUT: "600"
+      HINDSIGHT_API_LLM_MAX_CONCURRENT: "1"
       # DB: bump asyncpg client timeout — pgvector ANN query in retain phase 1
       # exceeded the 60 s default once the facts table grew.
       HINDSIGHT_API_DB_COMMAND_TIMEOUT: "180"
