@@ -3,7 +3,7 @@
 services:
 
   cloudflared:
-    image: cloudflare/cloudflared:2026.5.2
+    image: cloudflare/cloudflared:2026.6.1
     container_name: cloudflared
     command: --config /etc/cloudflared/config.yml tunnel run
     user: 568:568
@@ -65,7 +65,7 @@ services:
     restart: unless-stopped
 
   qui:
-    image: ghcr.io/hotio/qui:release-v1.19.0
+    image: ghcr.io/hotio/qui:release-v1.20.0
     container_name: qui
     env_file:
       - stack.env
@@ -81,7 +81,7 @@ services:
     restart: unless-stopped
 
   autobrr:
-    image: ghcr.io/s0up4200/autobrr-distroless:v1.79.0
+    image: ghcr.io/s0up4200/autobrr-distroless:v1.80.0
     container_name: autobrr
     user: nobody
     env_file:
@@ -99,7 +99,7 @@ services:
     restart: unless-stopped
 
   prowlarr:
-    image: ghcr.io/hotio/prowlarr:release-2.3.5.5327
+    image: ghcr.io/hotio/prowlarr:release-2.4.0.5397
     container_name: prowlarr
     restart: unless-stopped
     env_file:
@@ -126,7 +126,7 @@ services:
     restart: unless-stopped
 
   radarr:
-    image: ghcr.io/hotio/radarr:release-6.1.1.10360
+    image: ghcr.io/hotio/radarr:release-6.2.1.10461
     container_name: radarr
     env_file:
       - stack.env
@@ -192,7 +192,7 @@ services:
     restart: unless-stopped
 
   seerr:
-    image: ghcr.io/seerr-team/seerr:v3.2.0
+    image: ghcr.io/seerr-team/seerr:v3.3.0
     container_name: seerr
     user: 1000:1000
     env_file:
