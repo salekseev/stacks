@@ -26,6 +26,26 @@ services:
       - CLOAKBROWSER_BACKEND=patchright
       - CLOAKBROWSER_CACHE_DIR=/datastore/cloakbrowser-cache
       - CLOAKBROWSER_HUMANIZE=true
+    # The official changedetection.io image is slim and ships NO browser system
+    # libraries (libatk, libnss3, libgbm, ...) — it normally offloads fetching to
+    # a sidecar browser. CloakBrowser runs Chromium *in-container*, so its
+    # downloaded binary dies with "libatk-1.0.so.0: cannot open shared object
+    # file" until those OS deps exist. EXTRA_PACKAGES (handled by the image's
+    # /docker-entrypoint.sh) only does `pip install`, never apt — so we install
+    # the Chromium system libraries here before handing off to that entrypoint.
+    # The guard keeps plain restarts fast; a container *recreate* reinstalls
+    # because OS libs live in the ephemeral layer, not on /datastore.
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        set -e
+        if ! ldconfig -p | grep -qF 'libatk-1.0.so.0'; then
+          echo "Installing Chromium system libraries for CloakBrowser..."
+          playwright install-deps chromium
+          rm -rf /var/lib/apt/lists/*
+        fi
+        exec /docker-entrypoint.sh python ./changedetection.py -d /datastore
     ports:
       - 5000:5000/tcp
 
