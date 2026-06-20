@@ -2,55 +2,44 @@
 
 services:
 
+  cloakbrowser:
+    restart: unless-stopped
+    image: cloakhq/cloakbrowser
+    container_name: cloakbrowser
+    hostname: cloakbrowser
+    # CDP multiplexer (cloakserve) in front of stealth Chromium.
+    # --headless=false renders to the image's bundled Xvfb (better anti-bot).
+    # --idle-timeout=300 reaps disconnected per-seed Chrome processes.
+    # cloakserve auto-binds 0.0.0.0:9222 inside containers (/.dockerenv).
+    command: cloakserve --headless=false --idle-timeout=300
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9222/json/version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
   changedetection:
     restart: unless-stopped
     image: ghcr.io/dgtlmoon/changedetection.io:0.55.7
     container_name: changedetection
     hostname: changedetection
+    depends_on:
+      cloakbrowser:
+        condition: service_healthy
     volumes:
       - changedetection-data:/datastore
-    # Configurable proxy list support, see https://github.com/dgtlmoon/changedetection.io/wiki/Proxy-configuration#proxy-list-support
-    #        - ./proxies.json:/datastore/proxies.json
     environment:
-      # Log output levels: TRACE, DEBUG(default), INFO, SUCCESS, WARNING, ERROR, CRITICAL
-      # - LOGGER_LEVEL=TRACE
       - BASE_URL=https://changedetection.alekseev.us
       - HIDE_REFERER=true
       - FETCH_WORKERS=5
       - MINIMUM_SECONDS_RECHECK_TIME=3
       - ALLOW_FILE_URI=False
       - TZ=America/New_York
-      # CloakBrowser stealth fetcher (in-container plugin) + patchright driver backend.
-      # Binary (~200MB) downloads on first CloakBrowser fetch into CLOAKBROWSER_CACHE_DIR.
-      - EXTRA_PACKAGES=changedetection.io-cloak-browser cloakbrowser[patchright]
-      - CLOAKBROWSER_BACKEND=patchright
-      - CLOAKBROWSER_CACHE_DIR=/datastore/cloakbrowser-cache
-      - CLOAKBROWSER_HUMANIZE=true
-    # The official changedetection.io image is slim and ships NO browser system
-    # libraries (libatk, libnss3, libgbm, ...) — it normally offloads fetching to
-    # a sidecar browser. CloakBrowser runs Chromium *in-container*, so its
-    # downloaded binary dies with "libatk-1.0.so.0: cannot open shared object
-    # file" until those OS deps exist. EXTRA_PACKAGES (handled by the image's
-    # /docker-entrypoint.sh) only does `pip install`, never apt — so we install
-    # the Chromium system libraries here before handing off to that entrypoint.
-    # The guard keeps plain restarts fast; a container *recreate* reinstalls
-    # because OS libs live in the ephemeral layer, not on /datastore.
-    entrypoint:
-      - /bin/bash
-      - -c
-      - |
-        set -e
-        if ! ldconfig -p | grep -qF 'libatk-1.0.so.0'; then
-          echo "Installing Chromium system libraries for CloakBrowser..."
-          export DEBIAN_FRONTEND=noninteractive
-          apt-get update
-          apt-get install -y --no-install-recommends \
-            libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
-            libdbus-1-3 libxkbcommon0 libatspi2.0-0 libxcomposite1 libxdamage1 \
-            libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2
-          rm -rf /var/lib/apt/lists/*
-        fi
-        exec /docker-entrypoint.sh python ./changedetection.py -d /datastore
+      # Drive the CloakBrowser sidecar over CDP (built-in Playwright fetcher).
+      - PLAYWRIGHT_DRIVER_URL=http://cloakbrowser:9222
+      # Give managed Cloudflare challenges time to auto-resolve before capture.
+      - WEBDRIVER_DELAY_BEFORE_CONTENT_READY=10
     ports:
       - 5000:5000/tcp
 
