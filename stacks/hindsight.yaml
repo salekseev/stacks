@@ -140,7 +140,7 @@ services:
     restart: unless-stopped
 
   litellm:
-    image: ghcr.io/berriai/litellm-non_root:v1.89.2
+    image: ghcr.io/berriai/litellm-non_root:v1.89.3
     container_name: hindsight-litellm
     entrypoint:
       - sh
