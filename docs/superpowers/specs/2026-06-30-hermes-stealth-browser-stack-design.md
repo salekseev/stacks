@@ -322,9 +322,12 @@ scenario that justifies the added trust surface.
   tool subprocesses, so re-allow it via `terminal.env_passthrough: [OP_SERVICE_ACCOUNT_TOKEN]` in
   `config.yaml`.
 
-**Plan-tier requirement:** 1Password **Service Accounts require a Teams or Business plan**
-(individual/Family cannot create them); granular per-vault read-only permission is a Business feature.
-Confirm the plan before relying on this path.
+**Plan-tier note:** 1Password **Service Accounts are available on Individual, Families, Teams, and
+Business** plans (per 1Password's service-account rate-limits docs, which list Individual/Families at
+1,000 reads/hr and 100 writes/hr). The operator is on a **Families** plan, which supports this path.
+Caveat: the finest-grained per-item **read-only** permission is a **Business** feature — on Families a
+service account is scoped at the **vault** level, so achieve least-privilege by creating a dedicated,
+minimal vault for the agent (rather than relying on a read-only grant).
 
 **Security (load-bearing):** an LLM-driven browser agent is **prompt-injectable** — a hostile page may
 try to coax it into exfiltrating whatever it can read. Blast radius = everything in that one vault, so
@@ -371,8 +374,9 @@ complex than the §6 host-file Docker-secrets approach, with no security gain. K
 - Exact pinned digests for all three images; Cloudflare version pin.
 - Exact Camoufox stealth keys exposed by the pinned jo-inc image (`webgl_config`, `geoip`,
   `block_webrtc`, `humanize`, proxy) and how Hermes passes them through (§10).
-- (If Phase 2) 1Password plan tier supports Service Accounts (Teams/Business); the official Hermes
-  1Password skill name/path and `terminal.env_passthrough` behavior on the pinned image (§11).
+- (If Phase 2) exact 1Password service-account vault scoping on a Families plan (vault-level;
+  per-item read-only is Business-only); the official Hermes 1Password skill name/path and
+  `terminal.env_passthrough` behavior on the pinned image (§11).
 
 ## 14. Open questions / future
 
