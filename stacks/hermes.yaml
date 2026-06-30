@@ -33,6 +33,7 @@ services:
       - CAMOFOX_VNC_HOST=0.0.0.0                # noVNC web port reachable from cloudflared (default localhost)
       - CAMOFOX_VNC_BASE_PORT=6080
       - CAMOFOX_VNC_RESOLUTION=1920x1080x24     # avoids the 1x1 Xvfb trap
+      - CAMOFOX_HEADLESS=virtual                # headed-in-Xvfb (stronger anti-detect than true-headless)
       - CAMOFOX_VNC_TIMEOUT_MS=900000           # keep display/VNC up 15 min for the human login-handoff (confirm var name)
     volumes:
       - /mnt/spool/apps/data/hermes/camofox:/home/node/.camofox
@@ -66,7 +67,10 @@ services:
     # (re)populated from a new agent image.
     user: "0:0"
     entrypoint: ["/bin/sh", "-c"]
-    command: ["chmod -R a+rX /opt/hermes 2>/dev/null || true; exec /init gateway run"]
+    # chmod the source readable for the webui rsync, then hand off to the image's REAL entrypoint
+    # (/init + main-wrapper.sh). Execing `/init gateway run` was wrong — there's no `gateway` on PATH,
+    # so s6 logged "rc.init: gateway: not found" and the container crash-looped (exit 127).
+    command: ["chmod -R a+rX /opt/hermes 2>/dev/null || true; exec /init /opt/hermes/docker/main-wrapper.sh"]
     environment:
       - HERMES_HOME=/home/hermes/.hermes
       - HERMES_UID=1000
