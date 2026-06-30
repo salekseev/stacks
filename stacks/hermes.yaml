@@ -1,0 +1,103 @@
+# $schema: https://raw.githubusercontent.com/compose-spec/compose-spec/refs/heads/main/schema/compose-spec.json
+#
+# Hermes stealth-browser agent stack. See docs/superpowers/specs/2026-06-30-hermes-stealth-browser-stack-design.md
+# Secrets are supplied via Portainer stack environment variables and interpolated below as ${VAR}.
+# Required Portainer stack env vars:
+#   CAMOFOX_SHARED_KEY      - bearer shared between camofox (server) and hermes (client)
+#   VNC_PASSWORD            - noVNC password for the interactive-login viewer
+#   HERMES_WEBUI_PASSWORD   - password for the Hermes web UI
+#   ANTHROPIC_TOKEN         - Claude OAuth token (sk-ant-oat-...) or use ANTHROPIC_API_KEY instead
+#   HERMES_TUNNEL_ID        - Cloudflare tunnel UUID
+# Nothing is published to the host; only the UI and noVNC are reachable via cloudflared + Cloudflare Access.
+
+services:
+
+  camofox:
+    restart: unless-stopped
+    image: ghcr.io/jo-inc/camofox-browser:1.11.2
+    container_name: camofox
+    hostname: camofox
+    # Stealth Camoufox (Firefox) + baked-in noVNC viewer + persistent per-userId profiles.
+    # VNC plugin deps (x11vnc/novnc/websockify) ship in the published image; ENABLE_VNC turns it on.
+    environment:
+      - ENABLE_VNC=1
+      - VNC_BIND=0.0.0.0          # bind noVNC on all interfaces so cloudflared (a peer container) can reach it
+      - NOVNC_PORT=6080
+      - VNC_PASSWORD=${VNC_PASSWORD}
+      # Global bearer auth on the REST API (every request except /health must carry this).
+      - CAMOFOX_ACCESS_KEY=${CAMOFOX_SHARED_KEY}
+    volumes:
+      - /mnt/spool/apps/data/hermes/camofox:/home/node/.camofox
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9377/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - hermes-net
+
+  hermes-webui:
+    restart: unless-stopped
+    image: ghcr.io/nesquena/hermes-webui:v0.51.760
+    container_name: hermes-webui
+    hostname: hermes-webui
+    # Web dashboard AND the Hermes agent (runs in-process; reads ~/.hermes from the mounted volume).
+    depends_on:
+      camofox:
+        condition: service_healthy
+    environment:
+      - HERMES_WEBUI_HOST=0.0.0.0
+      - HERMES_WEBUI_PORT=8787
+      - HERMES_WEBUI_PASSWORD=${HERMES_WEBUI_PASSWORD}
+      - WANTED_UID=1000           # must own /mnt/spool/apps/config/hermes/home
+      - WANTED_GID=1000
+      # Route all agent browser tools through the camofox sidecar over its REST API.
+      - CAMOFOX_URL=http://camofox:9377
+      - CAMOFOX_API_KEY=${CAMOFOX_SHARED_KEY}   # client bearer; MUST equal camofox's CAMOFOX_ACCESS_KEY
+      - CAMOFOX_USER_ID=operator                # stable id -> externally-managed mode (no destructive cleanup)
+      - CAMOFOX_SESSION_KEY=visible-tab
+      - CAMOFOX_ADOPT_EXISTING_TAB=true         # reuse the human-authenticated tab instead of creating a new one
+      # Claude credential. OAuth setup-token (sk-ant-oat-...) via ANTHROPIC_TOKEN, or swap for ANTHROPIC_API_KEY.
+      - ANTHROPIC_TOKEN=${ANTHROPIC_TOKEN}
+    volumes:
+      - /mnt/spool/apps/config/hermes/home:/home/hermeswebui/.hermes
+      - /mnt/spool/apps/data/hermes/workspace:/workspace
+    networks:
+      - hermes-net
+
+  cloudflared:
+    restart: unless-stopped
+    image: cloudflare/cloudflared:2026.6.1
+    container_name: hermes-cloudflared
+    hostname: hermes-cloudflared
+    command: --config /etc/cloudflared/config.yml tunnel run
+    user: "568:568"
+    configs:
+      - source: cloudflared
+        target: /etc/cloudflared/config.yml
+        uid: "568"
+        gid: "568"
+        mode: 0440
+    volumes:
+      - /mnt/spool/apps/config/hermes/cloudflared:/etc/cloudflared/creds
+    depends_on:
+      - hermes-webui
+      - camofox
+    networks:
+      - hermes-net
+
+configs:
+  cloudflared:
+    content: |
+      tunnel: ${HERMES_TUNNEL_ID}
+      credentials-file: /etc/cloudflared/creds/tunnel.json
+      ingress:
+        - hostname: hermes.alekseev.us
+          service: http://hermes-webui:8787
+        - hostname: hermes-browser.alekseev.us
+          service: http://camofox:6080
+        - service: http_status:404
+
+networks:
+  hermes-net:
