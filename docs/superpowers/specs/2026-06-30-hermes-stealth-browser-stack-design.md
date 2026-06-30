@@ -480,6 +480,7 @@ services:
     environment:
       - HERMES_WEBUI_HOST=0.0.0.0
       - HERMES_WEBUI_PORT=8787
+      - HERMES_WEBUI_STATE_DIR=/home/hermeswebui/.hermes/webui
       - WANTED_UID=1000
       - WANTED_GID=1000
       - CAMOFOX_URL=http://camofox:9377

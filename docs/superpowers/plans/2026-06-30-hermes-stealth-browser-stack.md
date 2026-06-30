@@ -107,6 +107,7 @@ services:
     environment:
       - HERMES_WEBUI_HOST=0.0.0.0
       - HERMES_WEBUI_PORT=8787
+      - HERMES_WEBUI_STATE_DIR=/home/hermeswebui/.hermes/webui
       - HERMES_WEBUI_PASSWORD=${HERMES_WEBUI_PASSWORD}
       - WANTED_UID=1000           # must own /mnt/spool/apps/config/hermes/home
       - WANTED_GID=1000
