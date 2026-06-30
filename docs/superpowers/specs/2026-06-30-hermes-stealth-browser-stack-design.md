@@ -27,6 +27,8 @@ reasoning model initially (model-agnostic, swappable later), and the stealth bro
 - Not multi-tenant or horizontally scaled — single operator, single shared browser profile to
   start (the chosen components support more later without redesign).
 - Not solving Anthropic billing — OAuth billing behavior is Anthropic's; documented as a caveat.
+- Not passing a GPU into the browser container — rejected on stealth grounds (see §10).
+- Agent-driven credential access (1Password) is **optional / Phase 2**, not part of the initial build (see §11).
 
 ## 3. Key decisions (and why)
 
@@ -39,6 +41,8 @@ reasoning model initially (model-agnostic, swappable later), and the stealth bro
 | Stealth packaging | **Official image `ghcr.io/jo-inc/camofox-browser:1.11.2`** (pin by digest) | Verified: the published multi-arch (amd64/arm64) image is built from `Dockerfile.ci` which copies `camofox.config.json` + `plugins/` and runs `install-plugin-deps.sh`; that script installs apt deps for **every** listed plugin via `Object.keys(plugins)` and never checks the `enabled` flag — so **x11vnc + noVNC + websockify are baked in**. VNC is a runtime toggle (`ENABLE_VNC=1`). No custom build needed; matches the repo's pinned-image convention. |
 | Remote login → handoff | **Native to jo-inc**: shared X display (noVNC) + persistent per-`userId` profile + Hermes tab adoption | jo-inc's VNC plugin attaches `x11vnc -shared` to the **same** Xvfb display the agent's browser renders on, and Hermes supports `CAMOFOX_USER_ID` + `CAMOFOX_ADOPT_EXISTING_TAB` to reuse (not destroy) the human-authenticated tab/profile. |
 | External access | **`cloudflared` tunnel + Cloudflare Access** | Matches the existing `hindsight` stack pattern. No host port publishing for sensitive services. |
+| GPU for stealth | **No GPU passthrough** | Camoufox spoofs WebGL from common-consumer-GPU presets and renders via software (llvmpipe); a real A400 causes a string-vs-pixel mismatch and is a rare/suspicious fingerprint. See §10. |
+| Agent credentials | **Human noVNC login + persistent sessions (default); 1Password optional (Phase 2)** | Default exposes no secrets to the agent. For unattended agent-driven login, the official Hermes 1Password skill + `op` CLI + a scoped read-only Service Account. See §11. |
 
 ### Rejected alternatives
 
@@ -256,7 +260,84 @@ if live tab-adoption proves flaky: rely on the **persistent per-`userId` profile
 agent's next task for that `userId` inherits cookies) and/or jo-inc's `GET /sessions/:userId/storage_state`
 export — both lower-coupling and confirmed.
 
-## 10. Testing & validation
+## 10. Stealth tuning & the GPU decision
+
+**Do NOT pass the NVIDIA A400 (or any GPU) into the `camofox` container.** It would reduce stealth,
+not improve it:
+
+- Camoufox **spoofs** WebGL vendor/renderer strings from a database of *common consumer* GPUs and is
+  designed around **software (Mesa/llvmpipe) rendering** — jo-inc deliberately ships llvmpipe and
+  masks the "no-GPU / SwiftShader / llvmpipe" headless tell behind a realistic spoofed string.
+- A real GPU creates a **string-vs-pixel mismatch**: the spoofed renderer string would not match the
+  A400's actual hardware-rendered canvas/WebGL pixel hashes, and modern anti-bot systems cross-check
+  those for internal consistency. That mismatch is a *stronger* detection signal than the thing it
+  would "fix".
+- An **A400 is a rare workstation GPU** (April-2024 Ampere pro card) — high-entropy, reads as
+  non-consumer/datacenter hardware, the opposite of blending in.
+- GPU-accelerated WebGL in a headless Firefox container (nvidia-container-toolkit + VirtualGL +
+  EGL/GLX, then forcing HW WebGL) is fragile and **unsupported** by Camoufox / jo-inc.
+
+**Out of scope (noted for the host):** the A400 is useful for a *separate* container — local LLM
+inference, NVENC transcode, or CUDA — never the browser. Not part of this stack.
+
+**The levers that actually move canvas/WebGL stealth** (Camoufox config to set/validate at deploy via
+jo-inc's `camofox.config.json` / env and Hermes' Camofox options — exact keys confirmed against the
+pinned image):
+
+- `webgl_config` (vendor, renderer) **matching the spoofed OS** — and **never randomize** values
+  (WAFs hash the WebGL fingerprint; random = instant mismatch).
+- `geoip=true` for timezone/locale/geo coherence with the egress IP.
+- **WebRTC leak prevention** (`block_webrtc` / proxy) — STUN-over-UDP can leak the real WAN IP behind
+  an HTTP/TCP proxy.
+- `humanize` for human-like cursor/scroll motion.
+- A **quality residential egress / proxy** — IP reputation is decisive; datacenter IPs get blocked
+  regardless of fingerprint (consistent with the residential-IP lesson from the `changedetection` stack).
+- Canvas noise is **off by default**; if enabled, prefer consistent / content-aware noise.
+
+## 11. Credential management for the agent (1Password) — optional, Phase 2
+
+**Default (Phase 1): no agent credentials, no 1Password.** The stack's primary auth model is the
+**human logging in via noVNC**, after which Camofox **persists the session** (cookies survive) and the
+agent reuses it per `userId`. For most use this covers logins with **zero secret exposure to the
+agent**. Start here.
+
+**Add 1Password only for unattended, agent-driven login** — when the agent must log in itself (fresh
+sessions, fast-expiring cookies, TOTP-gated sites) with no human at the noVNC console. This is the only
+scenario that justifies the added trust surface.
+
+**Recommended wiring (if/when added):**
+
+- **Approach:** the **official Hermes 1Password skill** (`hermes skills install official/security/1password`)
+  + the **`op` CLI** + a scoped **Service Account**. No Connect server, no MCP server — the official
+  skill supports TOTP (`op read "op://…/one-time password?attribute=otp"`); Connect can't compute TOTP
+  and only pays off at high request volume; and there is **no production-grade headless 1Password MCP**
+  (1Password's own position is that secrets should not flow through an LLM/MCP channel).
+- **Containers:** **none new** — bake the binary into the Hermes image:
+  `COPY --from=1password/op:2 /usr/local/bin/op /usr/local/bin/op`.
+- **Vault scoping:** a **dedicated, read-only** vault containing *only* the site logins the agent needs
+  (never the personal vault): `op service-account create hermes-agent --expires-in 4w --vault hermes-agent-logins:read_items`.
+- **Token delivery:** `OP_SERVICE_ACCOUNT_TOKEN` as a **host-file Docker secret** (same pattern as the
+  rest of the stack), sourced in the entrypoint.
+- **Hermes gotcha:** Hermes scrubs env vars containing `KEY/TOKEN/SECRET/PASSWORD/CREDENTIAL/AUTH` from
+  tool subprocesses, so re-allow it via `terminal.env_passthrough: [OP_SERVICE_ACCOUNT_TOKEN]` in
+  `config.yaml`.
+
+**Plan-tier requirement:** 1Password **Service Accounts require a Teams or Business plan**
+(individual/Family cannot create them); granular per-vault read-only permission is a Business feature.
+Confirm the plan before relying on this path.
+
+**Security (load-bearing):** an LLM-driven browser agent is **prompt-injectable** — a hostile page may
+try to coax it into exfiltrating whatever it can read. Blast radius = everything in that one vault, so
+keep the vault tiny, read-only, service-account-scoped, `--expires-in`-rotated, token-as-secret, and
+audited via 1Password's service-account usage report. Keep the agent off the open internet (behind
+Cloudflare Access, as designed).
+
+**Do NOT use 1Password for the stack's own secrets** (`ANTHROPIC_*`, `VNC_PASSWORD`, camofox key,
+`HERMES_WEBUI_PASSWORD`): under Portainer, host-shell `op inject` / `op run` cannot run, and a
+container-side fetch still needs a bootstrap token that itself becomes a Docker secret — strictly more
+complex than the §6 host-file Docker-secrets approach, with no security gain. Keep §6 as-is.
+
+## 12. Testing & validation
 
 1. **Static:** `./scripts/validate-stack.sh hermes` (docker-compose config parse).
 2. **Bring-up:** deploy; confirm all three containers healthy; camofox `/health` returns 200.
@@ -269,7 +350,7 @@ export — both lower-coupling and confirmed.
    authenticated context using `CAMOFOX_USER_ID` + `ADOPT_EXISTING_TAB`. Record the working procedure.
 7. **Claude:** confirm the agent reaches Claude via the provisioned credential; verify model id.
 
-## 11. Confirmed vs. validate-at-deploy
+## 13. Confirmed vs. validate-at-deploy
 
 **Confirmed (code/docs verified):**
 - jo-inc published multi-arch image includes the VNC plugin (build-chain traced); `ENABLE_VNC=1`.
@@ -288,14 +369,23 @@ export — both lower-coupling and confirmed.
   plugin source `vnc-watcher.sh`; confirm against the running image).
 - `hermes-webui` health endpoint path; the entrypoint to wrap for secret-sourcing.
 - Exact pinned digests for all three images; Cloudflare version pin.
+- Exact Camoufox stealth keys exposed by the pinned jo-inc image (`webgl_config`, `geoip`,
+  `block_webrtc`, `humanize`, proxy) and how Hermes passes them through (§10).
+- (If Phase 2) 1Password plan tier supports Service Accounts (Teams/Business); the official Hermes
+  1Password skill name/path and `terminal.env_passthrough` behavior on the pinned image (§11).
 
-## 12. Open questions / future
+## 14. Open questions / future
 
 - Swap the reasoning model later (Nous Portal one-OAuth-many-models, OpenRouter, or your `litellm`).
 - Multiple isolated profiles (per-site `userId`s) if one shared profile becomes limiting.
 - Optional: expose Hermes' OpenAI-compatible API (`:8642`) to other internal tools later.
+- **Phase 2 — 1Password agent-driven login** (§11): enable once you've confirmed the Teams/Business
+  plan and want unattended logins; needs the `op` binary in the Hermes image + a scoped service account.
+- **Residential egress / proxy** for the browser if target sites block your server's IP reputation
+  (Camoufox handles fingerprint, not IP) — wire via Camoufox proxy/GeoIP.
+- Put the A400 to use in a *separate* stack (local LLM inference / NVENC), not this one.
 
-## 13. Appendix — reference compose (design target, finalized in the implementation plan)
+## 15. Appendix — reference compose (design target, finalized in the implementation plan)
 
 ```yaml
 # $schema: https://raw.githubusercontent.com/compose-spec/compose-spec/refs/heads/main/schema/compose-spec.json
