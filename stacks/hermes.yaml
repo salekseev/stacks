@@ -37,19 +37,40 @@ services:
     networks:
       - hermes-net
 
+  hermes-agent:
+    restart: unless-stopped
+    image: nousresearch/hermes-agent:v2026.6.19
+    container_name: hermes-agent
+    hostname: hermes-agent
+    # Supplies the Hermes agent SOURCE (/opt/hermes) into the hermes-agent-src volume so
+    # hermes-webui can pip-install + import it. Idle gateway peer; needs no model creds.
+    command: ["gateway", "run"]
+    environment:
+      - HERMES_HOME=/home/hermes/.hermes
+      - HERMES_UID=1000
+      - HERMES_GID=1000
+    volumes:
+      - /mnt/spool/apps/config/hermes/home:/home/hermes/.hermes
+      - hermes-agent-src:/opt/hermes
+    networks:
+      - hermes-net
+
   hermes-webui:
     restart: unless-stopped
     image: ghcr.io/nesquena/hermes-webui:0.51.760
     container_name: hermes-webui
     hostname: hermes-webui
-    # Web dashboard AND the Hermes agent (runs in-process; reads ~/.hermes from the mounted volume).
+    # Web dashboard + the in-process agent; agent SOURCE comes from the hermes-agent-src volume.
     depends_on:
       camofox:
         condition: service_healthy
+      hermes-agent:
+        condition: service_started
     environment:
       - HERMES_WEBUI_HOST=0.0.0.0
       - HERMES_WEBUI_PORT=8787
       - HERMES_WEBUI_STATE_DIR=/home/hermeswebui/.hermes/webui   # required by init; persists under the mounted ~/.hermes
+      - HERMES_API_URL=http://hermes-agent:8642                  # gateway status pill (chat still runs in-process here)
       - HERMES_WEBUI_PASSWORD=${HERMES_WEBUI_PASSWORD}
       - WANTED_UID=1000           # must own /mnt/spool/apps/config/hermes/home
       - WANTED_GID=1000
@@ -63,6 +84,7 @@ services:
       - ANTHROPIC_TOKEN=${ANTHROPIC_TOKEN}
     volumes:
       - /mnt/spool/apps/config/hermes/home:/home/hermeswebui/.hermes
+      - hermes-agent-src:/home/hermeswebui/.hermes/hermes-agent:ro   # agent source (populated by hermes-agent); webui installs from it
       - /mnt/spool/apps/data/hermes/workspace:/workspace
     networks:
       - hermes-net
@@ -102,3 +124,6 @@ configs:
 
 networks:
   hermes-net:
+
+volumes:
+  hermes-agent-src:
