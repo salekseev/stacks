@@ -49,7 +49,15 @@ services:
     # release tag v2026.6.19 (which sends NO auth header -> 401 from the camofox sidecar).
     # Repin to the first release tag > v2026.6.19 once it ships. Bumping this image also
     # requires deleting the hermes-agent-src volume so the new source repopulates.
-    command: ["gateway", "run"]
+    # Run as root and make the source tree world-readable before handing off to s6 (/init).
+    # The :latest image ships /opt/hermes/.playwright and .venv as root-owned, non-readable
+    # files; that breaks hermes-webui's `rsync` staging of the source as uid 1000
+    # (agent issues #23402 / #27221). `a+rX` adds read + dir-traverse only (no +x on files).
+    # s6 still drops the gateway service to HERMES_UID. Self-heals whenever the volume is
+    # (re)populated from a new agent image.
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["chmod -R a+rX /opt/hermes 2>/dev/null || true; exec /init gateway run"]
     environment:
       - HERMES_HOME=/home/hermes/.hermes
       - HERMES_UID=1000
