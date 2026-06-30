@@ -132,10 +132,25 @@ configs:
       tunnel: ${HERMES_TUNNEL_ID}
       credentials-file: /etc/cloudflared/creds/tunnel.json
       ingress:
+        # Origin-side Cloudflare Access JWT validation (cloudflared verifies the
+        # Cf-Access-Jwt-Assertion against the team JWKS + audTag before proxying).
+        # NOTE: audTag must match each hostname's Access application. If hermes and
+        # hermes-browser are SEPARATE Access apps, give each its own AUD (the value
+        # below is what you provided "for both" — replace hermes-browser's if it differs).
         - hostname: hermes.alekseev.us
           service: http://hermes-webui:8787
+          access:
+            required: true
+            teamName: alekseev
+            audTag:
+              - f79eba4208644c03e8777ab7870842bc46887458b09d3ad19e74570b119bc37d
         - hostname: hermes-browser.alekseev.us
           service: http://camofox:6080
+          access:
+            required: true
+            teamName: alekseev
+            audTag:
+              - f79eba4208644c03e8777ab7870842bc46887458b09d3ad19e74570b119bc37d
         - service: http_status:404
 
 networks:
