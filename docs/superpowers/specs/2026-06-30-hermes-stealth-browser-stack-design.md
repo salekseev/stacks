@@ -470,7 +470,7 @@ services:
     networks: [hermes-net]
 
   hermes-webui:
-    image: ghcr.io/nesquena/hermes-webui:v0.51.760  # pin by digest
+    image: ghcr.io/nesquena/hermes-webui:0.51.760  # pin by digest
     container_name: hermes-webui
     hostname: hermes-webui
     restart: unless-stopped

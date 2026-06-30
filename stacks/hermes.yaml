@@ -39,7 +39,7 @@ services:
 
   hermes-webui:
     restart: unless-stopped
-    image: ghcr.io/nesquena/hermes-webui:v0.51.760
+    image: ghcr.io/nesquena/hermes-webui:0.51.760
     container_name: hermes-webui
     hostname: hermes-webui
     # Web dashboard AND the Hermes agent (runs in-process; reads ~/.hermes from the mounted volume).
