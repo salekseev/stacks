@@ -29,6 +29,7 @@ reasoning model initially (model-agnostic, swappable later), and the stealth bro
 - Not solving Anthropic billing — OAuth billing behavior is Anthropic's; documented as a caveat.
 - Not passing a GPU into the browser container — rejected on stealth grounds (see §10).
 - Agent-driven credential access (1Password) is **optional / Phase 2**, not part of the initial build (see §11).
+- Hindsight memory integration is **optional / Phase 2** — Hermes' built-in memory covers the initial build (see §12).
 
 ## 3. Key decisions (and why)
 
@@ -43,6 +44,7 @@ reasoning model initially (model-agnostic, swappable later), and the stealth bro
 | External access | **`cloudflared` tunnel + Cloudflare Access** | Matches the existing `hindsight` stack pattern. No host port publishing for sensitive services. |
 | GPU for stealth | **No GPU passthrough** | Camoufox spoofs WebGL from common-consumer-GPU presets and renders via software (llvmpipe); a real A400 causes a string-vs-pixel mismatch and is a rare/suspicious fingerprint. See §10. |
 | Agent credentials | **Human noVNC login + persistent sessions (default); 1Password optional (Phase 2)** | Default exposes no secrets to the agent. For unattended agent-driven login, the official Hermes 1Password skill + `op` CLI + a scoped read-only Service Account. See §11. |
+| Persistent memory | **Hermes native memory (default); Hindsight via native provider, optional (Phase 2)** | Built-in Markdown memory is always-on and enough for v1. Wire the existing Hindsight stack as Hermes' memory provider over a shared Docker network for semantic recall. See §12. |
 
 ### Rejected alternatives
 
@@ -340,7 +342,55 @@ Cloudflare Access, as designed).
 container-side fetch still needs a bootstrap token that itself becomes a Docker secret — strictly more
 complex than the §6 host-file Docker-secrets approach, with no security gain. Keep §6 as-is.
 
-## 12. Testing & validation
+## 12. Persistent memory via Hindsight — optional, Phase 2
+
+**Default (Phase 1): Hermes' built-in memory.** Hermes ships always-on Markdown memory (`SOUL.md`,
+`memories/MEMORY.md`, `memories/USER.md`) under `~/.hermes`, char-capped (~800 + ~500 tokens) and
+curated by the model. Enough for a working agent (identity, preferences, durable facts); it cannot be
+disabled and needs no extra infrastructure.
+
+**Enhance with the existing Hindsight stack (Phase 2)** for large-scale semantic recall, fact
+extraction, mental models, and cross-session learning the capped Markdown memory can't provide. Hermes
+has a **first-class native `hindsight` memory provider** (no raw MCP plumbing required); the external
+provider is **additive** — built-in memory stays active alongside it.
+
+**Recommended wiring:**
+- **Networking — shared external Docker network (best).** `docker network create shared-services` once
+  on the host; add both the `hindsight` service (a one-line change to the *existing* hindsight stack)
+  and the `hermes` service to it. Hermes then reaches `http://hindsight:8888/mcp/hermes/` by container
+  name — no internet, no Cloudflare Access.
+- **Provider config:** `HINDSIGHT_API_KEY=<tenant-key>` in `~/.hermes/.env`; `hermes memory setup` →
+  select `hindsight`; `memory.provider: hindsight`; pin a dedicated bank (e.g. `hermes`) so the agent's
+  memory is isolated from other Hindsight tenants.
+- **Fallback (if the native provider can't target a self-hosted URL):** register Hindsight as a raw MCP
+  server in `~/.hermes/config.yaml`:
+  ```yaml
+  mcp_servers:
+    hindsight:
+      url: "http://hindsight:8888/mcp/hermes/"   # single-bank; bank in path
+      headers:
+        Authorization: "Bearer ${HINDSIGHT_API_KEY}"
+      tools: { include: [recall, retain, sync_retain, reflect, get_memory, list_memories] }
+      timeout: 120
+  ```
+
+**Catches (validate at deploy):**
+- Hindsight serves MCP at **`/mcp`**, not `/api/mcp`. The existing hindsight cloudflared rule
+  (`^/api/(mcp|v1|...)` → `hindsight:8888`, path forwarded verbatim) would proxy `/api/mcp` → 404, and
+  the hostname may sit behind Cloudflare Access (blocks a programmatic agent). Use the shared Docker
+  network instead of the public URL.
+- The native provider's self-hosted **base-URL** config isn't clearly documented (only `HINDSIGHT_API_KEY`
+  is) — confirm via `hermes memory setup` / `$HERMES_HOME/hindsight/config.json`, else use the raw
+  `mcp_servers` fallback.
+- **Bank/tenant scoping:** the tenant key gates the whole dataplane; pin a dedicated `hermes` bank.
+- **Embedding consistency:** recall quality depends on Hindsight's own TEI pipeline; don't swap its
+  embedding model mid-corpus.
+- **Async writes:** `retain` is async (recall-immediately-after may miss); use `sync_retain` for
+  read-after-write; monitor `list_operations` for stuck ops.
+- **Timeouts:** Hindsight's `HINDSIGHT_API_LLM_TIMEOUT` defaults to 120s (raise to ~300 for slow/local
+  models); set Hermes' MCP `timeout` generously.
+
+## 13. Testing & validation
 
 1. **Static:** `./scripts/validate-stack.sh hermes` (docker-compose config parse).
 2. **Bring-up:** deploy; confirm all three containers healthy; camofox `/health` returns 200.
@@ -353,7 +403,7 @@ complex than the §6 host-file Docker-secrets approach, with no security gain. K
    authenticated context using `CAMOFOX_USER_ID` + `ADOPT_EXISTING_TAB`. Record the working procedure.
 7. **Claude:** confirm the agent reaches Claude via the provisioned credential; verify model id.
 
-## 13. Confirmed vs. validate-at-deploy
+## 14. Confirmed vs. validate-at-deploy
 
 **Confirmed (code/docs verified):**
 - jo-inc published multi-arch image includes the VNC plugin (build-chain traced); `ENABLE_VNC=1`.
@@ -377,8 +427,10 @@ complex than the §6 host-file Docker-secrets approach, with no security gain. K
 - (If Phase 2) exact 1Password service-account vault scoping on a Families plan (vault-level;
   per-item read-only is Business-only); the official Hermes 1Password skill name/path and
   `terminal.env_passthrough` behavior on the pinned image (§11).
+- (If Phase 2) Hindsight native-provider self-hosted base-URL config vs the raw `mcp_servers` fallback;
+  the `/mcp` (not `/api/mcp`) path; shared-network reachability and dedicated bank scoping (§12).
 
-## 14. Open questions / future
+## 15. Open questions / future
 
 - Swap the reasoning model later (Nous Portal one-OAuth-many-models, OpenRouter, or your `litellm`).
 - Multiple isolated profiles (per-site `userId`s) if one shared profile becomes limiting.
@@ -389,7 +441,7 @@ complex than the §6 host-file Docker-secrets approach, with no security gain. K
   (Camoufox handles fingerprint, not IP) — wire via Camoufox proxy/GeoIP.
 - Put the A400 to use in a *separate* stack (local LLM inference / NVENC), not this one.
 
-## 15. Appendix — reference compose (design target, finalized in the implementation plan)
+## 16. Appendix — reference compose (design target, finalized in the implementation plan)
 
 ```yaml
 # $schema: https://raw.githubusercontent.com/compose-spec/compose-spec/refs/heads/main/schema/compose-spec.json
