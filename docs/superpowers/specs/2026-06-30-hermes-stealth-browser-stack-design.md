@@ -46,6 +46,18 @@ production in these ways, all driven by deployment findings:
    Configure Access **before** the noVNC login-handoff (it would put real site credentials into a
    publicly-reachable browser).
 
+9. **camofox engine switched jo-inc → redf0x1 (supersedes items 6–7 above).** jo-inc `:1.11.2`
+   ships the noVNC stack broken/absent (#4314/#4933; fix on `master`, unreleased), so the camofox
+   service is now **`ghcr.io/redf0x1/camofox-browser:2.4.6`** — a source-verified
+   Hermes-compatible fork (same REST API/body, port 9377, per-`userId` persistent profiles) whose
+   image actually bakes in x11vnc/websockify/noVNC (no build, no runtime hacks). Consequences: the
+   **server bearer var is `CAMOFOX_API_KEY` on both sides now** (the earlier ACCESS_KEY/API_KEY
+   mismatch is gone — both = `CAMOFOX_SHARED_KEY`); must set `CAMOFOX_HOST=0.0.0.0` +
+   `CAMOFOX_VNC_HOST=0.0.0.0` (redf0x1 defaults to loopback); `CAMOFOX_VNC_RESOLUTION=1920x1080x24`
+   (avoids the 1×1 Xvfb). **noVNC is on-demand** — activate per session via
+   `POST /sessions/<userId>/toggle-display` (auto-expires after `CAMOFOX_VNC_TIMEOUT_MS`), and it
+   runs `x11vnc -nopw`, so the viewer is gated solely by Cloudflare Access. `VNC_PASSWORD` is unused.
+
 ---
 
 ## 1. Goal
