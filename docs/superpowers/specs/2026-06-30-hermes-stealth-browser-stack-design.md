@@ -58,6 +58,34 @@ production in these ways, all driven by deployment findings:
    `POST /sessions/<userId>/toggle-display` (auto-expires after `CAMOFOX_VNC_TIMEOUT_MS`), and it
    runs `x11vnc -nopw`, so the viewer is gated solely by Cloudflare Access. `VNC_PASSWORD` is unused.
 
+### noVNC login-handoff runbook (redf0x1 on-demand viewer)
+
+redf0x1 has **no always-on VNC** — `hermes-browser.alekseev.us` returns 502 until a session's display
+is toggled on (by design, not a bug). The compose is already configured for it
+(`CAMOFOX_VNC_BASE_PORT=6080`, `CAMOFOX_VNC_RESOLUTION=1920x1080x24`, `CAMOFOX_VNC_TIMEOUT_MS=900000`;
+websockify binds `0.0.0.0:6080` once started). To do a login-handoff:
+
+1. Ensure exactly one `operator` session exists (the agent opens one for `CAMOFOX_USER_ID=operator`
+   on any browse; or create one manually with `POST /tabs`).
+2. Toggle the display on — Portainer → `camofox` → Console:
+   ```sh
+   curl -s -X POST http://localhost:9377/sessions/operator/toggle-display \
+     -H "Authorization: Bearer $CAMOFOX_API_KEY" -H "Content-Type: application/json" \
+     -d '{"headless":"virtual"}'
+   ```
+   Response includes a `vncUrl` when VNC started. (If it says "override saved" with no `vncUrl`,
+   there wasn't a single `operator` session — do step 1 and retry.)
+3. Open `https://hermes-browser.alekseev.us/vnc.html?autoconnect=true&resize=scale` — noVNC
+   auto-connects (x11vnc `-nopw`; Cloudflare Access is the gate). Log in by hand.
+4. The login persists to the `operator` profile volume; the agent's next browse reuses it. The
+   display auto-stops after `CAMOFOX_VNC_TIMEOUT_MS` (15 min) or on `{"headless":true}`.
+
+**Caveats:** `toggle-display` restarts the context (**drops open tabs**) — don't toggle mid-automation;
+`:6080` is a single shared viewer (one session at a time). **Stealth recommendation:** set
+`CAMOFOX_HEADLESS=virtual` on the camofox service so the agent always renders headed-in-Xvfb (stronger
+anti-detect than true-headless; matches the changedetection `--headless=false` lesson) — a separate
+change; reverify agent browsing after applying.
+
 ---
 
 ## 1. Goal
