@@ -26,6 +26,9 @@ services:
       - VNC_PASSWORD=${VNC_PASSWORD}
       # Global bearer auth on the REST API (every request except /health must carry this).
       - CAMOFOX_ACCESS_KEY=${CAMOFOX_SHARED_KEY}
+      # Give a human time to log in via noVNC before the tab/session reaps (login-handoff flow).
+      - TAB_INACTIVITY_MS=900000       # close idle tabs after 15 min (image default: 5 min)
+      - SESSION_TIMEOUT_MS=1800000     # session inactivity expiry 30 min (= default; explicit, outlives the tab window)
     volumes:
       - /mnt/spool/apps/data/hermes/camofox:/home/node/.camofox
     healthcheck:
