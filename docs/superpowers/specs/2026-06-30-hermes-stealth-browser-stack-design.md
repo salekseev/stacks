@@ -2,9 +2,49 @@
 
 - **Date:** 2026-06-30
 - **Branch:** `hermes-stealth-browser-stack`
-- **Status:** Draft for review
+- **Status:** Deployed 2026-06-30 — agent↔camofox path verified; Cloudflare Access + noVNC login-handoff pending
 - **Stack file (to be created):** `stacks/hermes.yaml`
 - **Author:** brainstormed with Claude Code (ultracode)
+
+---
+
+## As-built status (deployed 2026-06-30)
+
+The stack is deployed and the agent↔camofox browsing path is **verified working** (native browser
+tools, Bearer auth, real rendered content). The **authoritative compose is `stacks/hermes.yaml`** (on
+`master`); the design sections below and the §16 appendix are the original design and differ from
+production in these ways, all driven by deployment findings:
+
+1. **Four services, not three.** `nesquena/hermes-webui` does **not** bundle the Hermes agent — it
+   runs the agent in-process but needs the agent **source**. Added a **`hermes-agent`**
+   (`nousresearch/hermes-agent`) container that populates a shared `hermes-agent-src` volume from
+   `/opt/hermes`, mounted read-only into `hermes-webui`, which `rsync`-stages then `pip install`s it.
+   (Supersedes the §3/§4/§5 "single container is both UI and agent" assumption.)
+2. **Agent image is `:latest`, not a pinned release tag.** The camofox Bearer-auth fix (issue #20476:
+   `CAMOFOX_API_KEY → Authorization: Bearer`) landed on `main` 2026-06-29, **after** the newest
+   release tag `v2026.6.19` (which sent no auth header → 401 from camofox). Repin to the first release
+   tag > v2026.6.19 once it ships. **Bumping the agent image requires deleting the `hermes-agent-src`
+   volume** so the new source repopulates (Docker won't overwrite a populated named volume).
+3. **Agent runs as root + `chmod -R a+rX /opt/hermes`** before s6 (`exec /init gateway run`). The
+   image ships `.playwright`/`.venv` root-owned + non-readable, which broke the webui's rsync staging
+   as uid 1000 (agent issues #23402/#27221). s6 still drops the gateway to `HERMES_UID`; self-heals on
+   image bumps.
+4. **`HERMES_WEBUI_STATE_DIR` is mandatory** (`/home/hermeswebui/.hermes/webui`) — the webui init
+   exits without it. `HERMES_API_URL=http://hermes-agent:8642` is set (gateway status pill).
+5. **Secrets via Portainer stack `${VAR}` interpolation**, not the §6 entrypoint-sourced Docker-secret
+   files — simpler and Portainer-safe, since every secret is a discrete env var the images read
+   natively (`CAMOFOX_SHARED_KEY`, `VNC_PASSWORD`, `HERMES_WEBUI_PASSWORD`, `ANTHROPIC_TOKEN`,
+   `HERMES_TUNNEL_ID`). Only the cloudflared tunnel creds live as a host file.
+6. **Camofox idle windows raised** for the login-handoff: `TAB_INACTIVITY_MS=900000` (15 min),
+   `SESSION_TIMEOUT_MS=1800000` (30 min).
+7. **camofox auth name mismatch confirmed in practice:** server validates `CAMOFOX_ACCESS_KEY`; the
+   agent sends the bearer via `CAMOFOX_API_KEY` (same value, `CAMOFOX_SHARED_KEY`). `CAMOFOX_API_KEY`
+   is scrubbed from the agent's shell/`terminal` tool (shell `curl` → 401), but the native browser
+   tools inject it — working as intended.
+8. **Still required: Cloudflare Access.** The tunnel works, but until Access apps gate
+   `hermes.alekseev.us` and `hermes-browser.alekseev.us`, both are public behind app-passwords only.
+   Configure Access **before** the noVNC login-handoff (it would put real site credentials into a
+   publicly-reachable browser).
 
 ---
 

@@ -12,6 +12,18 @@
 
 ---
 
+> **As-built (2026-06-30):** The deployed stack is the 4-service two-container shape in
+> `stacks/hermes.yaml` on `master` (authoritative), which differs from the Task-1 draft below. Key
+> deltas: added a `hermes-agent` source container (`nousresearch/hermes-agent:latest`) feeding a
+> shared `hermes-agent-src` volume into `hermes-webui`; the agent runs as root + `chmod -R a+rX
+> /opt/hermes` then `exec /init gateway run` (fixes root-owned `.playwright`/`.venv` perms that broke
+> the webui rsync staging); `HERMES_WEBUI_STATE_DIR` + `HERMES_API_URL` set on the webui; camofox
+> `TAB_INACTIVITY_MS`/`SESSION_TIMEOUT_MS` raised for the login-handoff; secrets via Portainer
+> `${VAR}` (not entrypoint-sourced). The agent image must stay `:latest` until the camofox Bearer-auth
+> fix (#20476) ships in a release tag > v2026.6.19; **bumping it requires deleting the
+> `hermes-agent-src` volume**. The agent↔camofox path is verified working; remaining: Cloudflare
+> Access + the noVNC login-handoff (Task 8). See the spec's "As-built status" section for full detail.
+
 ## Scope & split
 
 - **Phase 1 only.** 1Password agent-login and Hindsight memory are documented Phase-2 enhancements (spec §11/§12) and are **not** in this plan.
