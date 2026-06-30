@@ -3,9 +3,9 @@
 # Hermes stealth-browser agent stack. See docs/superpowers/specs/2026-06-30-hermes-stealth-browser-stack-design.md
 # Secrets are supplied via Portainer stack environment variables and interpolated below as ${VAR}.
 # Required Portainer stack env vars:
-#   CAMOFOX_SHARED_KEY      - bearer shared between camofox (server) and hermes (client)
-#   VNC_PASSWORD            - noVNC password for the interactive-login viewer
+#   CAMOFOX_SHARED_KEY      - REST bearer; same secret on camofox (CAMOFOX_API_KEY) and hermes (CAMOFOX_API_KEY)
 #   HERMES_WEBUI_PASSWORD   - password for the Hermes web UI
+#   (VNC_PASSWORD is no longer used: redf0x1 runs x11vnc -nopw; the noVNC viewer is gated by Cloudflare Access)
 #   ANTHROPIC_TOKEN         - Claude OAuth token (sk-ant-oat-...) or use ANTHROPIC_API_KEY instead
 #   HERMES_TUNNEL_ID        - Cloudflare tunnel UUID
 # Nothing is published to the host; only the UI and noVNC are reachable via cloudflared + Cloudflare Access.
@@ -14,25 +14,31 @@ services:
 
   camofox:
     restart: unless-stopped
-    image: ghcr.io/jo-inc/camofox-browser:1.11.2
+    # redf0x1 fork of jo-inc/camofox-browser. Same REST API (verified Hermes-compatible drop-in)
+    # but this image actually SHIPS the noVNC stack (x11vnc/websockify/noVNC) — jo-inc :1.11.2
+    # shipped it broken/absent (issues #4314/#4933; fix unreleased). Auth: redf0x1's SERVER reads
+    # the bearer from CAMOFOX_API_KEY (jo-inc used CAMOFOX_ACCESS_KEY) — same secret Hermes sends.
+    # noVNC is ON-DEMAND: POST /sessions/<userId>/toggle-display switches that context to a virtual
+    # display + starts VNC (auto-expires after CAMOFOX_VNC_TIMEOUT_MS). x11vnc runs -nopw, so the
+    # viewer is gated ONLY by Cloudflare Access on hermes-browser.alekseev.us.
+    image: ghcr.io/redf0x1/camofox-browser:2.4.6
     container_name: camofox
     hostname: camofox
-    # Stealth Camoufox (Firefox) + baked-in noVNC viewer + persistent per-userId profiles.
-    # VNC plugin deps (x11vnc/novnc/websockify) ship in the published image; ENABLE_VNC turns it on.
     environment:
-      - ENABLE_VNC=1
-      - VNC_BIND=0.0.0.0          # bind noVNC on all interfaces so cloudflared (a peer container) can reach it
-      - NOVNC_PORT=6080
-      - VNC_PASSWORD=${VNC_PASSWORD}
-      # Global bearer auth on the REST API (every request except /health must carry this).
-      - CAMOFOX_ACCESS_KEY=${CAMOFOX_SHARED_KEY}
-      # Give a human time to log in via noVNC before the tab/session reaps (login-handoff flow).
-      - TAB_INACTIVITY_MS=900000       # close idle tabs after 15 min (image default: 5 min)
-      - SESSION_TIMEOUT_MS=1800000     # session inactivity expiry 30 min (= default; explicit, outlives the tab window)
+      - CAMOFOX_HOST=0.0.0.0                    # REST bind reachable from hermes-webui (default 127.0.0.1)
+      - CAMOFOX_PORT=9377
+      - CAMOFOX_API_KEY=${CAMOFOX_SHARED_KEY}   # server bearer; SAME secret Hermes sends (also CAMOFOX_API_KEY)
+      - CAMOFOX_AUTH_MODE=required              # enforce the bearer key on all networked requests
+      - CAMOFOX_PROFILES_DIR=/home/node/.camofox/profiles
+      - CAMOFOX_VNC_HOST=0.0.0.0                # noVNC web port reachable from cloudflared (default localhost)
+      - CAMOFOX_VNC_BASE_PORT=6080
+      - CAMOFOX_VNC_RESOLUTION=1920x1080x24     # avoids the 1x1 Xvfb trap
+      - CAMOFOX_VNC_TIMEOUT_MS=900000           # keep display/VNC up 15 min for the human login-handoff (confirm var name)
     volumes:
       - /mnt/spool/apps/data/hermes/camofox:/home/node/.camofox
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9377/health"]
+      # node is always present in this image; avoids assuming curl/wget exist.
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:9377/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -92,7 +98,7 @@ services:
       - WANTED_GID=1000
       # Route all agent browser tools through the camofox sidecar over its REST API.
       - CAMOFOX_URL=http://camofox:9377
-      - CAMOFOX_API_KEY=${CAMOFOX_SHARED_KEY}   # client bearer; MUST equal camofox's CAMOFOX_ACCESS_KEY
+      - CAMOFOX_API_KEY=${CAMOFOX_SHARED_KEY}   # client bearer; MUST equal camofox's CAMOFOX_API_KEY (same secret)
       - CAMOFOX_USER_ID=operator                # stable id -> externally-managed mode (no destructive cleanup)
       - CAMOFOX_SESSION_KEY=visible-tab
       - CAMOFOX_ADOPT_EXISTING_TAB=true         # reuse the human-authenticated tab instead of creating a new one
