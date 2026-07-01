@@ -3,6 +3,7 @@
 - **Date:** 2026-06-30
 - **Branch:** `hermes-stealth-browser-stack`
 - **Status:** Deployed 2026-06-30 — agent↔camofox path verified; Cloudflare Access + noVNC login-handoff pending
+- **Superseded (UI/agent-runtime topology):** by `2026-06-30-hermes-gateway-openwebui-port-design.md` — the `hermes-webui` + `hermes-agent-src` in-process topology is replaced by `hermes gateway run` (API :8642 + dashboard :9119) + Open WebUI. Camofox / noVNC / cloudflared sections below still apply.
 - **Stack file (to be created):** `stacks/hermes.yaml`
 - **Author:** brainstormed with Claude Code (ultracode)
 
