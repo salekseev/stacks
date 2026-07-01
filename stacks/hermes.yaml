@@ -10,6 +10,7 @@
 #   HERMES_DASHBOARD_SECRET   - dashboard token-signing key (openssl rand -base64 32)
 #   ANTHROPIC_TOKEN           - Claude OAuth setup-token (sk-ant-oat-...)
 #   HERMES_TUNNEL_ID          - Cloudflare tunnel UUID
+#   HINDSIGHT_API_KEY         - Hindsight tenant key (== server HINDSIGHT_API_TENANT_API_KEY); Phase-2 memory
 # Nothing published to host; only cloudflared reaches origins, gated by one Cloudflare Access app.
 
 services:
@@ -86,6 +87,15 @@ services:
       - CAMOFOX_ADOPT_EXISTING_TAB=true
       # Claude via OAuth setup-token (see spec §9 for the daemon-expiry runbook).
       - ANTHROPIC_TOKEN=${ANTHROPIC_TOKEN}
+      # Phase-2 Hindsight semantic memory — AUGMENTS (does not replace) built-in Markdown memory.
+      # Reaches the self-hosted hindsight dataplane by container name over the shared-services net.
+      # api_url carries /api (server HINDSIGHT_API_BASE_PATH); the REST client appends /v1/... .
+      # NOTE: `memory.provider: hindsight` must be set ONCE in config.yaml (no env selector exists)
+      # — see docs/superpowers/specs/2026-07-01-hermes-hindsight-phase2-design.md §6 and §10.
+      - HINDSIGHT_MODE=local_external
+      - HINDSIGHT_API_URL=http://hindsight:8888/api
+      - HINDSIGHT_BANK_ID=hermes
+      - HINDSIGHT_API_KEY=${HINDSIGHT_API_KEY}
     volumes:
       - /mnt/spool/apps/data/hermes/gateway:/opt/data
     healthcheck:
@@ -96,6 +106,7 @@ services:
       start_period: 60s
     networks:
       - hermes-net
+      - shared-services
 
   open-webui:
     restart: unless-stopped
@@ -181,3 +192,7 @@ configs:
 
 networks:
   hermes-net:
+  # Created out-of-band on the host: `docker network create shared-services`.
+  # Shared with the hindsight stack so hermes-gateway resolves `hindsight` by name.
+  shared-services:
+    external: true
