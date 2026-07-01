@@ -425,6 +425,8 @@ complex than the §6 host-file Docker-secrets approach, with no security gain. K
 
 ## 12. Persistent memory via Hindsight — optional, Phase 2
 
+> **As-built update (2026-07-01):** Implemented. See `docs/superpowers/specs/2026-07-01-hermes-hindsight-phase2-design.md` and `docs/superpowers/plans/2026-07-01-hermes-hindsight-phase2.md`. Wired via the native `hindsight` provider (`local_external`, `http://hindsight:8888/api`) over the `shared-services` network.
+
 **Default (Phase 1): Hermes' built-in memory.** Hermes ships always-on Markdown memory (`SOUL.md`,
 `memories/MEMORY.md`, `memories/USER.md`) under `~/.hermes`, char-capped (~800 + ~500 tokens) and
 curated by the model. Enough for a working agent (identity, preferences, durable facts); it cannot be

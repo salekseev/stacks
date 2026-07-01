@@ -20,6 +20,7 @@ Replace the fragile third-party UI + source-volume bridge with the **official fi
 ## 2. Non-goals / out of scope (Phase 2, unchanged)
 
 - Hindsight semantic memory provider (Hermes built-in memory covers v1).
+  - **As-built update (2026-07-01):** Phase-2 Hindsight memory now implemented — see `docs/superpowers/specs/2026-07-01-hermes-hindsight-phase2-design.md`.
 - 1Password agent-driven login (human noVNC login + persistent camofox profile remains the credential model).
 - Messaging adapters (Telegram/Discord/Slack/WhatsApp) — the gateway runs **API-server-only**; adapters stay opt-in/off.
 - Residential egress proxy for camofox.
