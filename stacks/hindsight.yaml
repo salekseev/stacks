@@ -78,6 +78,12 @@ services:
       hindsight-db:
         condition: service_healthy
     restart: unless-stopped
+    # Phase-2: also join the host-created shared-services net so the hermes stack can
+    # reach this dataplane by container name (http://hindsight:8888/api). `default` is
+    # re-listed explicitly so siblings (hindsight-db, litellm, tei-*) stay reachable.
+    networks:
+      - default
+      - shared-services
 
   hindsight-db:
     image: ghcr.io/tensorchord/vchord-suite:pg18-20260401
@@ -282,3 +288,9 @@ secrets:
     file: /mnt/spool/apps/config/hindsight/secrets/db_password
   hindsight_env:
     file: /mnt/spool/apps/config/hindsight/env
+
+networks:
+  # Created out-of-band on the host: `docker network create shared-services`.
+  # Shared with the hermes stack so hermes-gateway resolves `hindsight` by name.
+  shared-services:
+    external: true
