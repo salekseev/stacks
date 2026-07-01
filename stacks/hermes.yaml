@@ -96,6 +96,12 @@ services:
       - HINDSIGHT_API_URL=http://hindsight:8888/api
       - HINDSIGHT_BANK_ID=hermes
       - HINDSIGHT_API_KEY=${HINDSIGHT_API_KEY}
+      # Seal the read-only app venv. hindsight-client is baked into the image and
+      # pinned EXACTLY ==0.6.1; the runtime must NOT attempt a lazy pip install into
+      # /opt/hermes/.venv (root-owned, read-only to the uid-1000 daemon) — that fails
+      # and wedges retain. This is the Nous image's intended setting. NEVER upgrade the
+      # client: any version other than 0.6.1 triggers a reinstall attempt that fails.
+      - HERMES_DISABLE_LAZY_INSTALLS=1
     volumes:
       - /mnt/spool/apps/data/hermes/gateway:/opt/data
     healthcheck:
