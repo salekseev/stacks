@@ -183,6 +183,10 @@ Replace with:
       - HINDSIGHT_API_URL=http://hindsight:8888/api
       - HINDSIGHT_BANK_ID=hermes
       - HINDSIGHT_API_KEY=${HINDSIGHT_API_KEY}
+      # Seal the read-only app venv: hindsight-client is baked in and pinned ==0.6.1;
+      # never let the runtime lazy-install into /opt/hermes/.venv (uid 1000, read-only),
+      # and NEVER upgrade the client. See the spec's As-built operational notes.
+      - HERMES_DISABLE_LAZY_INSTALLS=1
     volumes:
       - /mnt/spool/apps/data/hermes/gateway:/opt/data
 ```
@@ -311,8 +315,13 @@ After the three tasks land in the repo, deploy per spec §10:
 2. Read `HINDSIGHT_API_TENANT_API_KEY` from `/mnt/spool/apps/config/hindsight/env`; set it as `HINDSIGHT_API_KEY` on the hermes Portainer stack.
 3. Redeploy the hindsight stack; verify internal DNS (`docker exec hindsight getent hosts hindsight-db`).
 4. Redeploy the hermes stack.
-5. `docker exec hermes-gateway hermes config set memory.provider hindsight` (config-file-only; restart gateway if it caches config at boot).
+5. `docker exec hermes-gateway hermes config set memory.provider hindsight` (config-file-only; restart gateway if it caches config at boot). **Do not run `hermes memory setup`'s dependency install / ignore its "Install failed" warning** — `hindsight-client` is baked in (`==0.6.1`) and the venv is read-only, so the warning is cosmetic (see spec As-built notes).
 6. Run spec §9 checks: `GET /api/version` from the gateway, `hermes config get memory.provider` → `hindsight`, retain→recall round-trip against the auto-created `hermes` bank.
+
+**Operational guardrails (verified live 2026-07-01):**
+- **Never upgrade `hindsight-client`** — pinned `==0.6.1`; any drift wedges runtime retain. `HERMES_DISABLE_LAZY_INSTALLS=1` (in `hermes.yaml`) enforces use of the baked client and makes the plugin fail-fast instead of emitting `ensurepip` errors.
+- Diagnostics via `sudo docker exec` run as **root** (can write the venv); the daemon runs as **uid 1000** (cannot) — a manual install "working" can mask the real daemon behavior.
+- The Hermes tenant key can list the whole Hindsight tenant (`claude-code::*` banks); isolation from Claude Code's memory is by `bank_id` (`hermes`) only.
 
 ---
 

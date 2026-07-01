@@ -1,10 +1,22 @@
 # Hermes ↔ Hindsight Memory (Phase 2) — Design Spec
 
 - **Date:** 2026-07-01
-- **Status:** Approved (brainstorm)
+- **Status:** Implemented & verified live on `silverstone` 2026-07-01 (PR #86). See the As-built notes below.
 - **Stack files:** `stacks/hermes.yaml` (modify), `stacks/hindsight.yaml` (modify — network attach only)
 - **Author:** brainstormed with Claude Code (ultracode)
 - **Implements:** the Phase‑2 Hindsight enhancement deferred by `2026-06-30-hermes-stealth-browser-stack-design.md` (§12) and `2026-06-30-hermes-gateway-openwebui-port-design.md` (§2). Built‑in Markdown memory carried over unchanged and stays active.
+
+---
+
+## As-built operational notes (verified live 2026-07-01, PR #86)
+
+Deployed and verified end-to-end on `silverstone`: a chat turn's retain → server-side fact extraction → recall round-trip against the `hermes` bank all succeed. Field-learned facts — these **override any conflicting assumption below**:
+
+- **`hindsight-client` is baked into the image and pinned EXACTLY `==0.6.1`** (`tools/lazy_deps.py`). It already satisfies the plugin, so **nothing needs installing**. **Never upgrade or downgrade it** — the plugin re-checks the version on every `_get_client`; any version ≠ 0.6.1 triggers a runtime reinstall attempt that **fails and silently wedges retain** (no bank, no memory). *(This bit us once: an `--upgrade` to 0.8.4 during debugging broke retain until 0.6.1 was restored.)*
+- **The app venv `/opt/hermes/.venv` is root-owned and read-only to the `hermes` (uid 1000) daemon.** Runtime `pip`/`uv` installs into it fail by design. So `hermes memory setup`'s "⚠ Install failed … hindsight-client" warning is **cosmetic and protective** (it can't corrupt the pinned client) — **ignore it; don't try to make it succeed.** Also: `sudo docker exec` runs as **root** (can write the venv) while the daemon runs as **uid 1000** (cannot) — a classic "works when I test it, fails in the daemon" trap.
+- **`HERMES_DISABLE_LAZY_INSTALLS=1` is set on `hermes-gateway`** (the Nous image is meant to set it). It makes the plugin use the baked client and fail-fast instead of emitting `ensurepip` errors. No-op when the pin is satisfied.
+- **Provider is configured via `config.yaml` + env; do not re-run the wizard** — `memory.provider: hindsight` is set and the `HINDSIGHT_*` env is supplied. (The wizard's default URL `http://localhost:8888` is wrong for us; env supplies `http://hindsight:8888/api`.)
+- **⚠ Tenant isolation:** the Hermes tenant key authenticates against the **whole Hindsight tenant** — it can list Claude Code's own banks (`claude-code::*`). Separation is by `bank_id` (`hermes`) convention **only**, not hard tenant isolation. Use a separate tenant key/schema for hard separation.
 
 ---
 
@@ -96,6 +108,7 @@ Two Portainer stacks on the same host, bridged by one **external** Docker networ
          HINDSIGHT_API_URL: http://hindsight:8888/api   # /api = server HINDSIGHT_API_BASE_PATH; client appends /v1/...
          HINDSIGHT_BANK_ID: hermes
          HINDSIGHT_API_KEY: ${HINDSIGHT_API_KEY}         # == server's HINDSIGHT_API_TENANT_API_KEY
+         HERMES_DISABLE_LAZY_INSTALLS: "1"               # seal read-only venv; use baked hindsight-client==0.6.1 (never upgrade)
    ```
 3. **Provider activation** — set `memory.provider: hindsight` once via `hermes config set memory.provider hindsight` (or `hermes memory setup` → hindsight); persists to `/opt/data/config.yaml`. **Required — no env var can select the provider** (§6).
 4. **Built‑in memory** — left enabled (no change). Optional post‑deploy tuning: `hermes tools disable memory` if recall quality suffers from tool competition.
@@ -183,7 +196,7 @@ Trade‑off: no automatic pre‑turn recall injection (model must call tools), b
 
 ## 11. Risks
 
-- **Version skew on the pinned digest** — §6 was verified against upstream `main`; the pinned `hermes-agent` digest (`…f670f417`) may ship an older provider or `hindsight-client` where paths differ. *Mitigation:* §9 step 1 (`/api/version`) + step 2 (`memory status`) catch it immediately; §7 fallback covers a hard miss.
+- **Version skew on the pinned digest → RESOLVED (verified live 2026-07-01).** The digest ships `hindsight-client==0.6.1` (pinned) and the §6 REST paths match. The real hazard is *version drift*: the plugin re-checks the pin at runtime, and any non-0.6.1 version triggers a reinstall into the read-only venv that fails and wedges retain. Shipped mitigation: **never upgrade the client** + `HERMES_DISABLE_LAZY_INSTALLS=1` (see As-built notes). Never run runtime `uv pip install` against the client.
 - **Static OAuth token expiry** (pre‑existing) — unrelated to memory but a silent‑outage risk for the daemon.
 - **Tool competition** — model may prefer the built‑in `memory` tool over Hindsight; mitigated by keeping auto‑recall on and, if needed, `hermes tools disable memory`.
 
@@ -193,5 +206,6 @@ Trade‑off: no automatic pre‑turn recall injection (model must call tools), b
 - [ ] `hindsight` still resolves its siblings after the network edit.
 - [ ] `GET http://hindsight:8888/api/version` from `hermes-gateway` returns 200 (routing + `/api` base path).
 - [ ] `hermes config get memory.provider` → `hindsight`; `hermes memory status` connected.
-- [ ] retain → recall round‑trip works against the auto‑created `hermes` bank.
+- [x] retain → recall round‑trip works against the auto‑created `hermes` bank. *(verified 2026-07-01: `CORAL-OTTER-77` retained + recalled)*
+- [x] `HERMES_DISABLE_LAZY_INSTALLS=1` on the gateway; `hindsight-client` at baked `==0.6.1` (never upgraded).
 - [ ] (Only if falling back) confirmed the working MCP path re: the `/api` base‑path caveat (§7).
