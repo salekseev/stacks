@@ -1,44 +1,41 @@
 # $schema: https://raw.githubusercontent.com/compose-spec/compose-spec/refs/heads/main/schema/compose-spec.json
 #
-# Hermes stealth-browser agent stack. See docs/superpowers/specs/2026-06-30-hermes-stealth-browser-stack-design.md
-# Secrets are supplied via Portainer stack environment variables and interpolated below as ${VAR}.
+# Hermes agent stack — first-party gateway + Open WebUI + dashboard.
+# See docs/superpowers/specs/2026-06-30-hermes-gateway-openwebui-port-design.md
+# Secrets supplied via Portainer stack environment variables interpolated below ${VAR}.
 # Required Portainer stack env vars:
-#   CAMOFOX_SHARED_KEY      - REST bearer; same secret on camofox (CAMOFOX_API_KEY) and hermes (CAMOFOX_API_KEY)
-#   HERMES_WEBUI_PASSWORD   - password for the Hermes web UI
-#   (VNC_PASSWORD is no longer used: redf0x1 runs x11vnc -nopw; the noVNC viewer is gated by Cloudflare Access)
-#   ANTHROPIC_TOKEN         - Claude OAuth token (sk-ant-oat-...) or use ANTHROPIC_API_KEY instead
-#   HERMES_TUNNEL_ID        - Cloudflare tunnel UUID
-# Nothing is published to the host; only the UI and noVNC are reachable via cloudflared + Cloudflare Access.
+#   CAMOFOX_SHARED_KEY        - camofox REST bearer (same secret on camofox + gateway)
+#   HERMES_API_SERVER_KEY     - bearer for the gateway OpenAI API :8642 (== Open WebUI OPENAI_API_KEY); >=8 chars
+#   HERMES_DASHBOARD_PASSWORD - dashboard basic-auth password (real 2nd factor behind Access)
+#   HERMES_DASHBOARD_SECRET   - dashboard token-signing key (openssl rand -base64 32)
+#   ANTHROPIC_TOKEN           - Claude OAuth setup-token (sk-ant-oat-...)
+#   HERMES_TUNNEL_ID          - Cloudflare tunnel UUID
+# Nothing published to host; only cloudflared reaches origins, gated by one Cloudflare Access app.
 
 services:
 
   camofox:
     restart: unless-stopped
-    # redf0x1 fork of jo-inc/camofox-browser. Same REST API (verified Hermes-compatible drop-in)
-    # but this image actually SHIPS the noVNC stack (x11vnc/websockify/noVNC) — jo-inc :1.11.2
-    # shipped it broken/absent (issues #4314/#4933; fix unreleased). Auth: redf0x1's SERVER reads
-    # the bearer from CAMOFOX_API_KEY (jo-inc used CAMOFOX_ACCESS_KEY) — same secret Hermes sends.
-    # noVNC is ON-DEMAND: POST /sessions/<userId>/toggle-display switches that context to a virtual
-    # display + starts VNC (auto-expires after CAMOFOX_VNC_TIMEOUT_MS). x11vnc runs -nopw, so the
-    # viewer is gated ONLY by Cloudflare Access on hermes-browser.alekseev.us.
+    # redf0x1 fork of jo-inc/camofox-browser: same REST API, but ships the noVNC stack.
+    # Server bearer = CAMOFOX_API_KEY (== CAMOFOX_SHARED_KEY). noVNC is on-demand via
+    # POST /sessions/<userId>/toggle-display; x11vnc -nopw, gated only by Cloudflare Access.
     image: ghcr.io/redf0x1/camofox-browser:2.4.6
     container_name: camofox
     hostname: camofox
     environment:
-      - CAMOFOX_HOST=0.0.0.0                    # REST bind reachable from hermes-webui (default 127.0.0.1)
+      - CAMOFOX_HOST=0.0.0.0
       - CAMOFOX_PORT=9377
-      - CAMOFOX_API_KEY=${CAMOFOX_SHARED_KEY}   # server bearer; SAME secret Hermes sends (also CAMOFOX_API_KEY)
-      - CAMOFOX_AUTH_MODE=required              # enforce the bearer key on all networked requests
+      - CAMOFOX_API_KEY=${CAMOFOX_SHARED_KEY}
+      - CAMOFOX_AUTH_MODE=required
       - CAMOFOX_PROFILES_DIR=/home/node/.camofox/profiles
-      - CAMOFOX_VNC_HOST=0.0.0.0                # noVNC web port reachable from cloudflared (default localhost)
+      - CAMOFOX_VNC_HOST=0.0.0.0
       - CAMOFOX_VNC_BASE_PORT=6080
-      - CAMOFOX_VNC_RESOLUTION=1920x1080x24     # avoids the 1x1 Xvfb trap
-      - CAMOFOX_HEADLESS=virtual                # headed-in-Xvfb (stronger anti-detect than true-headless)
-      - CAMOFOX_VNC_TIMEOUT_MS=900000           # keep display/VNC up 15 min for the human login-handoff (confirm var name)
+      - CAMOFOX_VNC_RESOLUTION=1920x1080x24
+      - CAMOFOX_HEADLESS=virtual
+      - CAMOFOX_VNC_TIMEOUT_MS=900000
     volumes:
       - /mnt/spool/apps/data/hermes/camofox:/home/node/.camofox
     healthcheck:
-      # node is always present in this image; avoids assuming curl/wget exist.
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:9377/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
@@ -47,71 +44,84 @@ services:
     networks:
       - hermes-net
 
-  hermes-agent:
+  hermes-gateway:
     restart: unless-stopped
-    image: nousresearch/hermes-agent:latest
-    container_name: hermes-agent
-    hostname: hermes-agent
-    # Supplies the Hermes agent SOURCE (/opt/hermes) into the hermes-agent-src volume so
-    # hermes-webui can pip-install + import it. Idle gateway peer; needs no model creds.
-    # NOTE: :latest (not a release tag) on purpose. The Camofox bearer-auth fix (#20476:
-    # CAMOFOX_API_KEY -> "Authorization: Bearer") landed on main 2026-06-29, AFTER the newest
-    # release tag v2026.6.19 (which sends NO auth header -> 401 from the camofox sidecar).
-    # Repin to the first release tag > v2026.6.19 once it ships. Bumping this image also
-    # requires deleting the hermes-agent-src volume so the new source repopulates.
-    # Run as root and make the source tree world-readable before handing off to s6 (/init).
-    # The :latest image ships /opt/hermes/.playwright and .venv as root-owned, non-readable
-    # files; that breaks hermes-webui's `rsync` staging of the source as uid 1000
-    # (agent issues #23402 / #27221). `a+rX` adds read + dir-traverse only (no +x on files).
-    # s6 still drops the gateway service to HERMES_UID. Self-heals whenever the volume is
-    # (re)populated from a new agent image.
-    user: "0:0"
-    entrypoint: ["/bin/sh", "-c"]
-    # chmod the source readable for the webui rsync, then hand off to the image's REAL entrypoint
-    # (/init + main-wrapper.sh). Execing `/init gateway run` was wrong — there's no `gateway` on PATH,
-    # so s6 logged "rc.init: gateway: not found" and the container crash-looped (exit 127).
-    command: ["chmod -R a+rX /opt/hermes 2>/dev/null || true; exec /init /opt/hermes/docker/main-wrapper.sh"]
-    environment:
-      - HERMES_HOME=/home/hermes/.hermes
-      - HERMES_UID=1000
-      - HERMES_GID=1000
-    volumes:
-      - /mnt/spool/apps/config/hermes/home:/home/hermes/.hermes
-      - hermes-agent-src:/opt/hermes
-    networks:
-      - hermes-net
-
-  hermes-webui:
-    restart: unless-stopped
-    image: ghcr.io/nesquena/hermes-webui:0.51.760
-    container_name: hermes-webui
-    hostname: hermes-webui
-    # Web dashboard + the in-process agent; agent SOURCE comes from the hermes-agent-src volume.
+    # First-party agent daemon. `gateway run` serves the OpenAI-compatible API on :8642 and
+    # (HERMES_DASHBOARD=1) the dashboard on :9119 as a co-resident s6-rc service. s6 supervises
+    # both, so a mis-start restarts in-container (no Docker crash-loop).
+    #
+    # Image pinned by digest: the ONLY published image carrying BOTH the camofox bearer-auth fix
+    # (#20476, merged to main 2026-06-29) and the gateway sleep/PATH crash fix (#36208). No release
+    # tag has both yet. STOPGAP — migrate to the first tag > v2026.6.19 containing commit babd916:
+    #   gh api repos/NousResearch/hermes-agent/compare/babd916...<tag> --jq '{status,behind_by}'
+    #   docker buildx imagetools inspect docker.io/nousresearch/hermes-agent:<tag> --format '{{.Manifest.Digest}}'
+    image: nousresearch/hermes-agent@sha256:c30340ee58dde86c284864b1016f474ec48c4a70ed49d24920cab083f670f417
+    container_name: hermes-gateway
+    hostname: hermes-gateway
+    command: gateway run
     depends_on:
       camofox:
         condition: service_healthy
-      hermes-agent:
-        condition: service_started
     environment:
-      - HERMES_WEBUI_HOST=0.0.0.0
-      - HERMES_WEBUI_PORT=8787
-      - HERMES_WEBUI_STATE_DIR=/home/hermeswebui/.hermes/webui   # required by init; persists under the mounted ~/.hermes
-      - HERMES_API_URL=http://hermes-agent:8642                  # gateway status pill (chat still runs in-process here)
-      - HERMES_WEBUI_PASSWORD=${HERMES_WEBUI_PASSWORD}
-      - WANTED_UID=1000           # must own /mnt/spool/apps/config/hermes/home
-      - WANTED_GID=1000
-      # Route all agent browser tools through the camofox sidecar over its REST API.
+      # /opt/data (HERMES_HOME) is chowned to this uid/gid by the image's s6 init.
+      - HERMES_UID=1000
+      - HERMES_GID=1000
+      # OpenAI-compatible API server (consumed by Open WebUI)
+      - API_SERVER_ENABLED=true
+      - API_SERVER_HOST=0.0.0.0
+      - API_SERVER_KEY=${HERMES_API_SERVER_KEY}
+      # First-party dashboard — fail-closed on a non-loopback bind, so basic-auth is REQUIRED.
+      - HERMES_DASHBOARD=1
+      - HERMES_DASHBOARD_HOST=0.0.0.0
+      - HERMES_DASHBOARD_PORT=9119
+      - HERMES_DASHBOARD_BASIC_AUTH_USERNAME=admin
+      - HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=${HERMES_DASHBOARD_PASSWORD}
+      - HERMES_DASHBOARD_BASIC_AUTH_SECRET=${HERMES_DASHBOARD_SECRET}
+      # NEVER set HERMES_DASHBOARD_INSECURE (bypasses the auth gate).
+      # Route all browser tools server-side through the camofox sidecar (same vars as before).
       - CAMOFOX_URL=http://camofox:9377
-      - CAMOFOX_API_KEY=${CAMOFOX_SHARED_KEY}   # client bearer; MUST equal camofox's CAMOFOX_API_KEY (same secret)
-      - CAMOFOX_USER_ID=operator                # stable id -> externally-managed mode (no destructive cleanup)
+      - CAMOFOX_API_KEY=${CAMOFOX_SHARED_KEY}
+      - CAMOFOX_USER_ID=operator
       - CAMOFOX_SESSION_KEY=visible-tab
-      - CAMOFOX_ADOPT_EXISTING_TAB=true         # reuse the human-authenticated tab instead of creating a new one
-      # Claude credential. OAuth setup-token (sk-ant-oat-...) via ANTHROPIC_TOKEN, or swap for ANTHROPIC_API_KEY.
+      - CAMOFOX_ADOPT_EXISTING_TAB=true
+      # Claude via OAuth setup-token (see spec §9 for the daemon-expiry runbook).
       - ANTHROPIC_TOKEN=${ANTHROPIC_TOKEN}
     volumes:
-      - /mnt/spool/apps/config/hermes/home:/home/hermeswebui/.hermes
-      - hermes-agent-src:/home/hermeswebui/.hermes/hermes-agent:ro   # agent source (populated by hermes-agent); webui installs from it
-      - /mnt/spool/apps/data/hermes/workspace:/workspace
+      - /mnt/spool/apps/data/hermes/gateway:/opt/data
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:9119/api/status',timeout=5).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    networks:
+      - hermes-net
+
+  open-webui:
+    restart: unless-stopped
+    # Daily chat client -> gateway /v1. No published ports: trusted-header SSO is only safe
+    # because nothing but cloudflared can reach :8080 to forge Cf-Access-Authenticated-User-Email.
+    image: ghcr.io/open-webui/open-webui:v0.10.1
+    container_name: open-webui
+    hostname: open-webui
+    depends_on:
+      hermes-gateway:
+        condition: service_healthy
+    environment:
+      - ENABLE_OPENAI_API=true
+      - OPENAI_API_BASE_URL=http://hermes-gateway:8642/v1
+      - OPENAI_API_KEY=${HERMES_API_SERVER_KEY}
+      - ENABLE_OLLAMA_API=false
+      - WEBUI_AUTH=true
+      - ENABLE_SIGNUP=false
+      - ENABLE_LOGIN_FORM=false
+      - WEBUI_AUTH_TRUSTED_EMAIL_HEADER=Cf-Access-Authenticated-User-Email
+      - WEBUI_AUTH_TRUSTED_NAME_HEADER=Cf-Access-Authenticated-User-Email
+      - WEBUI_URL=https://hermes.alekseev.us
+      - ENABLE_WEBSOCKET_SUPPORT=true
+      - CORS_ALLOW_ORIGIN=https://hermes.alekseev.us
+    volumes:
+      - /mnt/spool/apps/data/hermes/open-webui:/app/backend/data
     networks:
       - hermes-net
 
@@ -131,7 +141,8 @@ services:
     volumes:
       - /mnt/spool/apps/config/hermes/cloudflared:/etc/cloudflared/creds
     depends_on:
-      - hermes-webui
+      - open-webui
+      - hermes-gateway
       - camofox
     networks:
       - hermes-net
@@ -142,13 +153,18 @@ configs:
       tunnel: ${HERMES_TUNNEL_ID}
       credentials-file: /etc/cloudflared/creds/tunnel.json
       ingress:
-        # Origin-side Cloudflare Access JWT validation (cloudflared verifies the
-        # Cf-Access-Jwt-Assertion against the team JWKS + audTag before proxying).
-        # NOTE: audTag must match each hostname's Access application. If hermes and
-        # hermes-browser are SEPARATE Access apps, give each its own AUD (the value
-        # below is what you provided "for both" — replace hermes-browser's if it differs).
+        # Origin-side Cloudflare Access JWT validation. All three hosts share ONE Access app /
+        # audTag (team alekseev); cloudflared verifies Cf-Access-Jwt-Assertion against the team
+        # JWKS + audTag before proxying.
         - hostname: hermes.alekseev.us
-          service: http://hermes-webui:8787
+          service: http://open-webui:8080
+          access:
+            required: true
+            teamName: alekseev
+            audTag:
+              - f79eba4208644c03e8777ab7870842bc46887458b09d3ad19e74570b119bc37d
+        - hostname: hermes-dashboard.alekseev.us
+          service: http://hermes-gateway:9119
           access:
             required: true
             teamName: alekseev
@@ -165,6 +181,3 @@ configs:
 
 networks:
   hermes-net:
-
-volumes:
-  hermes-agent-src:
