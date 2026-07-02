@@ -52,9 +52,12 @@ services:
     # One-shot init container: copies the op CLI binary from the official 1Password image
     # into the op-bin named volume, which hermes-gateway mounts at /usr/local/sbin.
     # Runs once at stack start and exits 0; hermes-gateway waits on service_completed_successfully.
+    # user: root required — 1password/op runs as opuser by default, which cannot write to the
+    # root-owned Docker named volume on first creation.
     image: 1password/op:2.34.1
     container_name: hermes-op-init
     restart: "no"
+    user: root
     entrypoint: ["cp", "/usr/local/bin/op", "/op-bin/op"]
     volumes:
       - op-bin:/op-bin
