@@ -114,9 +114,12 @@ services:
       # and wedges retain. This is the Nous image's intended setting. NEVER upgrade the
       # client: any version other than 0.6.1 triggers a reinstall attempt that fails.
       - HERMES_DISABLE_LAZY_INSTALLS=1
+      # Prepend /opt/op-bin so the op CLI (mounted from op-init) is on PATH for uid 1000.
+      # Cannot mount into /usr/local/bin (overlays node/uv/uvx) or /usr/local/sbin (root-only sbin).
+      - PATH=/opt/op-bin:/opt/hermes/bin:/opt/hermes/.venv/bin:/opt/data/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     volumes:
       - /mnt/spool/apps/data/hermes/gateway:/opt/data
-      - op-bin:/usr/local/sbin:ro   # op binary from op-init; /usr/local/sbin is in PATH, no conflicts
+      - op-bin:/opt/op-bin:ro   # op binary from op-init
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:9119/api/status',timeout=5).status==200 else 1)"]
       interval: 30s
