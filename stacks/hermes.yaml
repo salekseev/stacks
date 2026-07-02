@@ -48,6 +48,17 @@ services:
     networks:
       - hermes-net
 
+  op-init:
+    # One-shot init container: copies the op CLI binary from the official 1Password image
+    # into the op-bin named volume, which hermes-gateway mounts at /usr/local/sbin.
+    # Runs once at stack start and exits 0; hermes-gateway waits on service_completed_successfully.
+    image: 1password/op:2.34.1
+    container_name: hermes-op-init
+    restart: "no"
+    entrypoint: ["cp", "/usr/local/bin/op", "/op-bin/op"]
+    volumes:
+      - op-bin:/op-bin
+
   hermes-gateway:
     restart: unless-stopped
     # First-party agent daemon. `gateway run` serves the OpenAI-compatible API on :8642 and
@@ -60,6 +71,8 @@ services:
     depends_on:
       camofox:
         condition: service_healthy
+      op-init:
+        condition: service_completed_successfully
     environment:
       # /opt/data (HERMES_HOME) is chowned to this uid/gid by the image's s6 init.
       - HERMES_UID=1000
@@ -100,6 +113,7 @@ services:
       - HERMES_DISABLE_LAZY_INSTALLS=1
     volumes:
       - /mnt/spool/apps/data/hermes/gateway:/opt/data
+      - op-bin:/usr/local/sbin   # op binary from op-init; /usr/local/sbin is in PATH, no conflicts
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:9119/api/status',timeout=5).status==200 else 1)"]
       interval: 30s
@@ -191,6 +205,9 @@ configs:
             audTag:
               - f79eba4208644c03e8777ab7870842bc46887458b09d3ad19e74570b119bc37d
         - service: http_status:404
+
+volumes:
+  op-bin:   # ephemeral bridge: populated by op-init, consumed by hermes-gateway
 
 networks:
   hermes-net:
