@@ -65,7 +65,7 @@ services:
     restart: unless-stopped
 
   qui:
-    image: ghcr.io/hotio/qui:release-v1.20.0
+    image: ghcr.io/hotio/qui:release-v1.22.0
     container_name: qui
     env_file:
       - stack.env
@@ -81,7 +81,7 @@ services:
     restart: unless-stopped
 
   autobrr:
-    image: ghcr.io/s0up4200/autobrr-distroless:v1.80.0
+    image: ghcr.io/s0up4200/autobrr-distroless:v1.81.0
     container_name: autobrr
     user: nobody
     env_file:
