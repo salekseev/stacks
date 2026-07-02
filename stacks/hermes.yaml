@@ -2,15 +2,18 @@
 #
 # Hermes agent stack — first-party gateway + Open WebUI + dashboard.
 # See docs/superpowers/specs/2026-06-30-hermes-gateway-openwebui-port-design.md
-# Secrets supplied via Portainer stack environment variables interpolated below ${VAR}.
-# Required Portainer stack env vars:
-#   CAMOFOX_SHARED_KEY        - camofox REST bearer (same secret on camofox + gateway)
-#   HERMES_API_SERVER_KEY     - bearer for the gateway OpenAI API :8642 (== Open WebUI OPENAI_API_KEY); >=8 chars
-#   HERMES_DASHBOARD_PASSWORD - dashboard basic-auth password (real 2nd factor behind Access)
-#   HERMES_DASHBOARD_SECRET   - dashboard token-signing key (openssl rand -base64 32)
-#   ANTHROPIC_TOKEN           - Claude OAuth setup-token (sk-ant-oat-...)
-#   HERMES_TUNNEL_ID          - Cloudflare tunnel UUID
-#   HINDSIGHT_API_KEY         - Hindsight tenant key (== server HINDSIGHT_API_TENANT_API_KEY); Phase-2 memory
+# Secrets split into two tiers:
+#   Portainer stack env vars (cross-container — must be set in Portainer UI):
+#     CAMOFOX_SHARED_KEY    - camofox REST bearer (shared between camofox and hermes-gateway)
+#     HERMES_API_SERVER_KEY - bearer for the gateway OpenAI API :8642 (== Open WebUI OPENAI_API_KEY); >=8 chars
+#   Hardcoded in compose (non-secret):
+#     HERMES_TUNNEL_ID = 0a0fe09f-7724-4e7e-9ad8-0326b70fa07f (Cloudflare tunnel UUID, inline below)
+#   /opt/data/.env on-disk (gateway-only secrets; written to /mnt/spool/apps/data/hermes/gateway/.env):
+#     ANTHROPIC_TOKEN                   - Claude OAuth setup-token (sk-ant-oat-...)
+#     HERMES_DASHBOARD_BASIC_AUTH_PASSWORD - dashboard basic-auth password (real 2nd factor behind Access)
+#     HERMES_DASHBOARD_BASIC_AUTH_SECRET   - dashboard token-signing key (openssl rand -base64 32)
+#     HINDSIGHT_API_KEY                 - Hindsight tenant key (== server HINDSIGHT_API_TENANT_API_KEY)
+#     OP_SERVICE_ACCOUNT_TOKEN          - 1Password service account (scoped read-only to hermes vault)
 # Nothing published to host; only cloudflared reaches origins, gated by one Cloudflare Access app.
 
 services:
@@ -76,8 +79,8 @@ services:
       - HERMES_DASHBOARD_HOST=0.0.0.0
       - HERMES_DASHBOARD_PORT=9119
       - HERMES_DASHBOARD_BASIC_AUTH_USERNAME=admin
-      - HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=${HERMES_DASHBOARD_PASSWORD}
-      - HERMES_DASHBOARD_BASIC_AUTH_SECRET=${HERMES_DASHBOARD_SECRET}
+      # HERMES_DASHBOARD_BASIC_AUTH_PASSWORD and HERMES_DASHBOARD_BASIC_AUTH_SECRET
+      # are set in /opt/data/.env (not Portainer) — gateway-only secrets.
       # NEVER set HERMES_DASHBOARD_INSECURE (bypasses the auth gate).
       # Route all browser tools server-side through the camofox sidecar (same vars as before).
       - CAMOFOX_URL=http://camofox:9377
@@ -85,8 +88,7 @@ services:
       - CAMOFOX_USER_ID=operator
       - CAMOFOX_SESSION_KEY=visible-tab
       - CAMOFOX_ADOPT_EXISTING_TAB=true
-      # Claude via OAuth setup-token (see spec §9 for the daemon-expiry runbook).
-      - ANTHROPIC_TOKEN=${ANTHROPIC_TOKEN}
+      # ANTHROPIC_TOKEN is set in /opt/data/.env (not Portainer) — gateway-only secret.
       # Phase-2 Hindsight semantic memory — AUGMENTS (does not replace) built-in Markdown memory.
       # Reaches the self-hosted hindsight dataplane by container name over the shared-services net.
       # api_url carries /api (server HINDSIGHT_API_BASE_PATH); the REST client appends /v1/... .
@@ -95,7 +97,7 @@ services:
       - HINDSIGHT_MODE=local_external
       - HINDSIGHT_API_URL=http://hindsight:8888/api
       - HINDSIGHT_BANK_ID=hermes
-      - HINDSIGHT_API_KEY=${HINDSIGHT_API_KEY}
+      # HINDSIGHT_API_KEY is set in /opt/data/.env (not Portainer) — gateway-only secret.
       # Seal the read-only app venv. hindsight-client is baked into the image and
       # pinned EXACTLY ==0.6.1; the runtime must NOT attempt a lazy pip install into
       # /opt/hermes/.venv (root-owned, read-only to the uid-1000 daemon) — that fails
@@ -167,7 +169,7 @@ services:
 configs:
   cloudflared:
     content: |
-      tunnel: ${HERMES_TUNNEL_ID}
+      tunnel: 0a0fe09f-7724-4e7e-9ad8-0326b70fa07f
       credentials-file: /etc/cloudflared/creds/tunnel.json
       ingress:
         # Origin-side Cloudflare Access JWT validation. All three hosts share ONE Access app /

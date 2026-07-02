@@ -15,22 +15,28 @@ Hermes routines that need service credentials (currently: Gixen eBay sniper; fut
 - Routine credentials live in 1Password, not in Portainer.
 - Adding a new credential to a routine requires only a 1Password vault change — no compose edit, no redeploy.
 - The Hermes agent can fetch credentials on demand when executing routines.
-- Infrastructure secrets (ANTHROPIC_TOKEN, CAMOFOX_SHARED_KEY, dashboard keys) remain in Portainer — unchanged.
+- Gateway-only infra secrets move from Portainer to `/opt/data/.env` on-disk (not visible in Portainer UI, no redeploy to rotate).
+- Cross-container secrets (`CAMOFOX_SHARED_KEY`, `HERMES_API_SERVER_KEY`) and compose-level vars (`HERMES_TUNNEL_ID`) remain in Portainer — unchanged.
 
 ## 3. Non-Goals
 
 - Migrating infra/stack secrets to 1Password (explicitly out of scope; see §8).
 - 1Password Connect or MCP server (too complex, not suitable for headless; already rejected).
 - 1Password Environments local `.env` file or agent hook (requires desktop app running on host; TrueNAS Scale is an immutable OS with no durable host package installs).
+- Moving cross-container secrets (`CAMOFOX_SHARED_KEY`, `HERMES_API_SERVER_KEY`) or compose-level vars (`HERMES_TUNNEL_ID`) out of Portainer — they have no alternative injection path.
 
 ## 4. Architecture
 
 ```
-Portainer env var
-  OP_SERVICE_ACCOUNT_TOKEN
+/opt/data/.env on-disk (silverstone volume mount)
+  ANTHROPIC_TOKEN
+  HERMES_DASHBOARD_BASIC_AUTH_PASSWORD
+  HERMES_DASHBOARD_BASIC_AUTH_SECRET
+  HINDSIGHT_API_KEY
+  OP_SERVICE_ACCOUNT_TOKEN          ◄── new
          │
-         ▼
-hermes-gateway container env
+         ▼ (Hermes reads .env at startup, exports all vars)
+hermes-gateway process env
          │
          ▼ (forwarded via skill's required_environment_variables)
 Hermes terminal sessions
@@ -42,38 +48,55 @@ op CLI (installed at runtime via Hermes install-and-remember)
 1Password cloud (hermes vault, read-only service account)
 ```
 
+Portainer only holds cross-container/compose-level vars: `CAMOFOX_SHARED_KEY`, `HERMES_API_SERVER_KEY`, `HERMES_TUNNEL_ID`.
+
 The Hermes `security-1password` skill handles both the `op` installation and the forwarding of `OP_SERVICE_ACCOUNT_TOKEN` to terminal sessions. No config.yaml edits are needed on the host for Phase 1.
 
 ## 5. Components
 
 ### 5a. `stacks/hermes.yaml` change (repo-side)
 
-Add one env var to the `hermes-gateway` service, after `HINDSIGHT_API_KEY`:
+Remove four gateway-only secrets from the `hermes-gateway` environment block (they move to `.env`):
+- `HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=${HERMES_DASHBOARD_PASSWORD}`
+- `HERMES_DASHBOARD_BASIC_AUTH_SECRET=${HERMES_DASHBOARD_SECRET}`
+- `ANTHROPIC_TOKEN=${ANTHROPIC_TOKEN}`
+- `HINDSIGHT_API_KEY=${HINDSIGHT_API_KEY}`
 
-```yaml
-# 1Password service account — scoped read-only to the `hermes` vault.
-# The security-1password skill installs op CLI via install-and-remember and
-# forwards this token to terminal sessions via required_environment_variables.
-- OP_SERVICE_ACCOUNT_TOKEN=${OP_SERVICE_ACCOUNT_TOKEN}
-```
+Replace with inline comments noting they are set in `/opt/data/.env`. Update the header comment block to document the two-tier secret split. `OP_SERVICE_ACCOUNT_TOKEN` is written directly to `.env` — no compose line needed.
 
 No bind-mount. No derived image. `op` is installed inside the container by the skill.
 
-### 5b. 1Password vault setup (user, one-time)
+### 5b. `/opt/data/.env` on silverstone (user edits once)
+
+File path: `/mnt/spool/apps/data/hermes/gateway/.env` (already exists, currently `700` perms).
+Tighten to `600`: `chmod 600 /mnt/spool/apps/data/hermes/gateway/.env`
+
+Add the following lines (values sourced from current Portainer env then removed from there):
+```
+ANTHROPIC_TOKEN=<sk-ant-oat-...>
+HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=<current HERMES_DASHBOARD_PASSWORD value>
+HERMES_DASHBOARD_BASIC_AUTH_SECRET=<current HERMES_DASHBOARD_SECRET value>
+HINDSIGHT_API_KEY=<current HINDSIGHT_API_KEY value>
+OP_SERVICE_ACCOUNT_TOKEN=<ops_...>
+```
+
+### 5c. 1Password vault setup (user, one-time)
 
 | Step | Detail |
 |---|---|
 | Create vault | Name: `hermes` |
 | Add item | Type: Login, Title: `gixen`, fields: `username` / `password` |
 | Create service account | Name: `hermes-gateway`, scoped read-only to `hermes` vault only |
-| Copy token | `OP_SERVICE_ACCOUNT_TOKEN=ops_…` |
+| Copy token | `OP_SERVICE_ACCOUNT_TOKEN=ops_…` → write to `.env` (see §5b) |
 
-### 5c. Portainer stack env vars
+### 5d. Portainer stack env vars
 
-Add: `OP_SERVICE_ACCOUNT_TOKEN=ops_…`
-Remove: `GIXEN_USERNAME`, `GIXEN_PASSWORD`
+Remove (moved to `.env`): `ANTHROPIC_TOKEN`, `HERMES_DASHBOARD_PASSWORD`, `HERMES_DASHBOARD_SECRET`, `HINDSIGHT_API_KEY`
+Remove (moved to 1Password): `GIXEN_USERNAME`, `GIXEN_PASSWORD`
+Remove (hardcoded in compose — not a secret): `HERMES_TUNNEL_ID`
+Keep: `CAMOFOX_SHARED_KEY`, `HERMES_API_SERVER_KEY`
 
-### 5d. Hermes skill enablement (user, one-time)
+### 5e. Hermes skill enablement (user, one-time)
 
 In the Hermes dashboard → Skills → Optional → Security → enable `security-1password`. On first activation the skill prompts for `OP_SERVICE_ACCOUNT_TOKEN` (already in container env — confirm/skip) and installs `op` CLI via `apt`. Hermes remembers the install command; after each container restart it reinstalls `op` when next needed.
 
