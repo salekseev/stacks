@@ -143,7 +143,7 @@ services:
     restart: unless-stopped
 
   sonarr:
-    image: ghcr.io/hotio/sonarr:release-4.0.17.2952
+    image: ghcr.io/hotio/sonarr:release-4.0.19.2979
     container_name: sonarr
     env_file:
       - stack.env
