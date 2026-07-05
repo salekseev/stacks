@@ -1,7 +1,7 @@
 # Hermes Dashboard Auth → Cloudflare Access OIDC — Design Spec
 
 - **Date:** 2026-07-03
-- **Status:** Approved (brainstorm) — **pending user review of this written spec** (see §12 for defaulted decisions)
+- **Status:** Approved — user-confirmed 2026-07-05: (a) inline non-secret ids, (b) OIDC-only edge posture, (c) `drain` excluded. Ready for implementation planning.
 - **Stack file:** `stacks/hermes.yaml` (`hermes-gateway` env + `cloudflared` ingress)
 - **Author:** brainstormed with Claude Code (ultracode)
 - **Related:** `2026-06-30-hermes-gateway-openwebui-port-design.md` — establishes the dashboard basic-auth model this supersedes.
@@ -150,8 +150,8 @@ If, on review, you prefer belt-and-suspenders on this full machine-control surfa
 5. **Regression:** `hermes` and `hermes-browser` still gated by the edge Access app; chat + browser paths unaffected.
 6. **Break-glass rehearsal (optional):** confirm the documented basic-auth re-add path restores access.
 
-## 12. Open items — defaulted while user was away; confirm at review
+## 12. Decisions — user-confirmed 2026-07-05
 
-- **(a) Inline vs Portainer for non-secret OIDC ids:** defaulted to **inline in compose** (`issuer`, `client_id`), matching the hardcoded tunnel UUID convention. Alternative: `${HERMES_DASHBOARD_OIDC_ISSUER}` / `${…CLIENT_ID}` Portainer vars.
-- **(b) Edge posture:** defaulted to **OIDC-only** (standing choice). Flip to §8 if defense-in-depth is preferred.
-- **(c) `drain` automation:** defaulted to **excluded (YAGNI)**; §9 documents adding it later.
+- **(a) Inline vs Portainer for non-secret OIDC ids:** **inline in compose** (`issuer`, `client_id`), matching the hardcoded tunnel UUID convention. ✅ confirmed.
+- **(b) Edge posture:** **OIDC-only** (edge Access dropped for the dashboard host). ✅ confirmed. §8 remains the documented opt-in if defense-in-depth is ever wanted.
+- **(c) `drain` automation:** **excluded (YAGNI)**; §9 documents adding it later. ✅ confirmed (no objection raised).
