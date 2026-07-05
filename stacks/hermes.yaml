@@ -10,8 +10,9 @@
 #     HERMES_TUNNEL_ID = 0a0fe09f-7724-4e7e-9ad8-0326b70fa07f (Cloudflare tunnel UUID, inline below)
 #   /opt/data/.env on-disk (gateway-only secrets; written to /mnt/spool/apps/data/hermes/gateway/.env):
 #     ANTHROPIC_TOKEN                   - Claude OAuth setup-token (sk-ant-oat-...)
-#     HERMES_DASHBOARD_BASIC_AUTH_PASSWORD - dashboard basic-auth password (real 2nd factor behind Access)
-#     HERMES_DASHBOARD_BASIC_AUTH_SECRET   - dashboard token-signing key (openssl rand -base64 32)
+#     HERMES_DASHBOARD_OIDC_ISSUER        - CF Access Generic OIDC SaaS issuer (.../cdn-cgi/access/sso/oidc/<app-id>)
+#     HERMES_DASHBOARD_OIDC_CLIENT_ID     - CF Access SaaS-OIDC client id (== app-id)
+#     HERMES_DASHBOARD_OIDC_CLIENT_SECRET - CF Access SaaS-OIDC client secret
 #     HINDSIGHT_API_KEY                 - Hindsight tenant key (== server HINDSIGHT_API_TENANT_API_KEY)
 #     OP_SERVICE_ACCOUNT_TOKEN          - 1Password service account (scoped read-only to hermes vault)
 # Nothing published to host; only cloudflared reaches origins, gated by one Cloudflare Access app.
@@ -84,14 +85,16 @@ services:
       - API_SERVER_ENABLED=true
       - API_SERVER_HOST=0.0.0.0
       - API_SERVER_KEY=${HERMES_API_SERVER_KEY}
-      # First-party dashboard — fail-closed on a non-loopback bind, so basic-auth is REQUIRED.
+      # First-party dashboard — fail-closed on a non-loopback bind. Auth = native OIDC (self_hosted
+      # provider) against Cloudflare Access as a Generic OIDC SaaS IdP. No basic-auth, no edge Access.
       - HERMES_DASHBOARD=1
       - HERMES_DASHBOARD_HOST=0.0.0.0
       - HERMES_DASHBOARD_PORT=9119
-      - HERMES_DASHBOARD_BASIC_AUTH_USERNAME=admin
-      # HERMES_DASHBOARD_BASIC_AUTH_PASSWORD and HERMES_DASHBOARD_BASIC_AUTH_SECRET
-      # are set in /opt/data/.env (not Portainer) — gateway-only secrets.
-      # NEVER set HERMES_DASHBOARD_INSECURE (bypasses the auth gate).
+      - HERMES_DASHBOARD_PUBLIC_URL=https://hermes-dashboard.alekseev.us
+      # OIDC config lives in /opt/data/.env (gateway-only), provisioned on the host:
+      #   HERMES_DASHBOARD_OIDC_ISSUER, HERMES_DASHBOARD_OIDC_CLIENT_ID, HERMES_DASHBOARD_OIDC_CLIENT_SECRET
+      # NEVER set HERMES_DASHBOARD_INSECURE (no-op since June-2026 hardening; keep absent).
+      # Do NOT set HERMES_DASHBOARD_OAUTH_CLIENT_ID (that selects the wrong `nous` provider).
       # Route all browser tools server-side through the camofox sidecar (same vars as before).
       - CAMOFOX_URL=http://camofox:9377
       - CAMOFOX_API_KEY=${CAMOFOX_SHARED_KEY}
@@ -198,11 +201,8 @@ configs:
               - f79eba4208644c03e8777ab7870842bc46887458b09d3ad19e74570b119bc37d
         - hostname: hermes-dashboard.alekseev.us
           service: http://hermes-gateway:9119
-          access:
-            required: true
-            teamName: alekseev
-            audTag:
-              - f79eba4208644c03e8777ab7870842bc46887458b09d3ad19e74570b119bc37d
+          # OIDC-only: the dashboard's own Cloudflare-Access-OIDC gate is the sole auth. No edge Access.
+          # (hermes + hermes-browser below keep their edge `access:` blocks.)
         - hostname: hermes-browser.alekseev.us
           service: http://camofox:6080
           access:
