@@ -1,7 +1,7 @@
 # Hermes Open WebUI Auth → Cloudflare Access OIDC — Design Spec
 
 - **Date:** 2026-07-05
-- **Status:** Approved (brainstorm) — user-confirmed **OIDC-only** edge posture 2026-07-05; **pending user review of this written spec**.
+- **Status:** Approved 2026-07-05 — OIDC-only edge posture; user confirmed the **OWUI DB is disposable → clean-slate migration** (see §6/§10). Ready for implementation planning.
 - **Stack file:** `stacks/hermes.yaml` (`open-webui` env + `cloudflared` ingress)
 - **Author:** brainstormed with Claude Code (ultracode)
 - **Sibling / sequencing:** Sequenced to run **after** `2026-07-03-hermes-dashboard-oidc-cloudflare-access-design.md` (the dashboard OIDC cutover) lands and is verified. Independently rollback-able. Supersedes the trusted-header SSO posture for `open-webui` from `2026-06-30-hermes-gateway-openwebui-port-design.md`.
@@ -61,7 +61,7 @@ Browser ──► hermes.alekseev.us ──► cloudflared ──► open-webui:
 | `OAUTH_PROVIDER_NAME` | **add** `Cloudflare Access` | login button label |
 | `OAUTH_SCOPES` | **add** `openid email profile` | default |
 | `OAUTH_CODE_CHALLENGE_METHOD` | **add** `S256` | PKCE (enable PKCE on the CF app too) |
-| `OAUTH_MERGE_ACCOUNTS_BY_EMAIL` | **add** `true` | link OIDC login to the existing admin by email (safe: Access verifies emails) |
+| `OAUTH_MERGE_ACCOUNTS_BY_EMAIL` | **omit** | not needed — clean-slate migration wipes the DB, so there is no pre-existing account to merge (§6) |
 | `ENABLE_PERSISTENT_CONFIG` | **add** `false` | make env authoritative over the persisted DB config (verify exact name — §8) |
 | `DEFAULT_USER_ROLE` | **add** `user` | preserve today's auto-provisioning (single operator); default would be `pending` |
 | `OAUTH_CLIENT_SECRET` | **add** `${OWUI_OIDC_CLIENT_SECRET}` | Portainer stack env (OWUI has no `/opt/data/.env`) |
@@ -89,14 +89,16 @@ Drop the `access:` block for `hermes.alekseev.us` (keep the route):
 
 ## 6. Host-side migration (operator; **sequenced after** the dashboard cutover)
 
-1. **Create a dedicated Generic OIDC SaaS app** in Cloudflare Access for `hermes.alekseev.us`: Redirect URL `https://hermes.alekseev.us/oauth/oidc/callback`; scopes `openid email profile`; **PKCE enabled**; attach an Access policy that **mirrors the identities allowed today**. Record `OWUI_APP_ID` (= client_id), the client secret, and verify the discovery URL.
-2. **Back up** the OWUI data dir `/mnt/spool/apps/data/hermes/open-webui` — this is the recovery insurance (there is no password fallback).
-3. Provision `OWUI_OIDC_CLIENT_SECRET` in Portainer stack env.
-4. Deploy the `stacks/hermes.yaml` edit **while the edge Access app on `hermes.alekseev.us` is still present** (verify OIDC + the admin merge before removing any layer). Log in with the **exact same admin email** → merge-by-email links the OIDC identity to the existing admin (avoids the duplicate-pending lockout).
-5. **Verify:** OIDC login succeeds; the existing admin is preserved (not a new `pending` duplicate); a normal login works; no `Cf-Access-*` header trust remains.
+Because the OWUI DB is **disposable** (user-confirmed — no critical data), we use a **clean-slate** migration: wipe the DB so the first OIDC login auto-provisions as admin. This removes the merge-by-email step and the admin-lockout hazard entirely.
+
+1. **Create a dedicated Generic OIDC SaaS app** in Cloudflare Access for `hermes.alekseev.us`: Redirect URL `https://hermes.alekseev.us/oauth/oidc/callback`; scopes `openid email profile`; **PKCE enabled**; attach an Access policy that allows your identity. Record `OWUI_APP_ID` (= client_id), the client secret, and verify the discovery URL.
+2. Provision `OWUI_OIDC_CLIENT_SECRET` in Portainer stack env.
+3. **Wipe the OWUI data dir for a clean slate.** Stop `open-webui`, then empty `/mnt/spool/apps/data/hermes/open-webui` (e.g. move it aside so recovery is trivial): `mv /mnt/spool/apps/data/hermes/open-webui{,.bak-YYYYMMDD} && mkdir /mnt/spool/apps/data/hermes/open-webui && chown 1000:1000 /mnt/spool/apps/data/hermes/open-webui`. An empty DB makes the first OIDC login the admin.
+4. Deploy the `stacks/hermes.yaml` edit. (You may leave the edge Access app on `hermes.alekseev.us` in place for this first deploy to verify OIDC before removing it — optional now that data is disposable.)
+5. **Verify:** the first OIDC login succeeds and lands as **admin** (empty DB); chat works; the user is your real email; no `Cf-Access-*` header trust remains.
 6. **Cut over to OIDC-only:** remove `hermes.alekseev.us` from the edge Access app (confirm the `cloudflared` `access:` block is already gone from the deployed stack). Leave `hermes-browser` edge-gated.
 
-**Break-glass (if the merge/login fails):** restore the step-2 backup; or temporarily set `ENABLE_LOGIN_FORM=true` + a known admin password and redeploy; or `docker exec` + set the user's role to `admin` in the SQLite DB.
+**Break-glass (trivial — data is disposable):** wipe the data dir again and redeploy; or temporarily set `ENABLE_LOGIN_FORM=true` + a known admin password. Nothing of value is lost.
 
 ## 7. Alternatives considered
 
@@ -108,14 +110,14 @@ Drop the `access:` block for `hermes.alekseev.us` (keep the route):
 
 ## 8. Risks / validate-at-deploy
 
-- **⚠️ Admin-lockout hazard (biggest):** OWUI matches OAuth logins by `oauth_sub` first; the existing trusted-header admin has no `oauth_sub`, and first-user-becomes-admin only fires on an empty DB. A naive cutover creates a **duplicate `pending`** account and **locks out the admin**, with no password fallback (`ENABLE_LOGIN_FORM=false`). Mitigation = §6 steps 2 (backup) + `OAUTH_MERGE_ACCOUNTS_BY_EMAIL=true` + same-email login.
-- **`ENABLE_PERSISTENT_CONFIG` exact name/behavior:** if the persisted DB config shadows env, the new OAuth env is silently ignored and the cutover no-ops. Verify the exact var against `v0.10.2` (the two research inputs disagreed on `ENABLE_PERSISTENT_CONFIG` vs `ENABLE_OAUTH_PERSISTENT_CONFIG`); or apply config via the Admin Panel.
+- **Admin-lockout hazard — NEUTRALIZED by the clean-slate migration (§6):** the risk (OWUI matches `oauth_sub` first; an existing trusted-header admin has none; no password fallback) only applies when migrating a *populated* DB. Because the DB is wiped, the first OIDC login auto-becomes admin — no merge, no duplicate-`pending` lockout. Break-glass = wipe + redeploy.
+- **`ENABLE_PERSISTENT_CONFIG` exact name/behavior (lower severity with a fresh DB):** on the wiped DB the env is read on first boot, so the "persisted config shadows env" trap is largely moot for the initial cutover; still set it (`false`) so future env changes stay authoritative, and verify the exact var name against `v0.10.2` (research inputs disagreed on `ENABLE_PERSISTENT_CONFIG` vs `ENABLE_OAUTH_PERSISTENT_CONFIG`).
 - **`DEFAULT_USER_ROLE`** defaults to `pending` under OIDC → set `user` to preserve today's auto-provisioning.
 - **Policy parity:** the dedicated SaaS-OIDC app has its own Allow policy — must allow your identity or OIDC denies even though the (soon-removed) edge app would have allowed you.
 - **PKCE consistency:** if the CF app enables PKCE, OWUI must send `S256`; mismatch = hard auth failure. Enable on both.
-- **merge-by-email safety:** safe **only** because Cloudflare Access verifies emails. Never enable against an IdP with unverified emails (account-takeover vector).
+- **merge-by-email:** not used (clean-slate migration has no pre-existing account to merge). If you ever migrate a *populated* DB instead, `OAUTH_MERGE_ACCOUNTS_BY_EMAIL=true` is safe here only because Access verifies emails (never with unverified-email IdPs — account-takeover vector).
 - **Role-management bugs** (upstream #13676/#15551/#20518: `OAUTH_ALLOWED_ROLES`/mapping silently ignored on some providers): keep `ENABLE_OAUTH_ROLE_MANAGEMENT` **off**.
-- **No break-glass with login-form off** → the backup is the recovery path; take it first.
+- **Recovery is trivial** — data is disposable, so wipe + redeploy (or temporarily `ENABLE_LOGIN_FORM=true`) is the fallback; no backup required as insurance.
 - **Reduced defense-in-depth (accepted):** OIDC-only drops the edge layer; OWUI's pre-auth routes become reachable via the tunnel (OWUI still cryptographically gates all data).
 - **Egress:** `open-webui` must reach `cloudflareaccess.com` for discovery/JWKS/token.
 - **Double-Access not applicable:** because OIDC-only drops the edge app, there is no edge+OIDC double login and no callback bypass to configure (unlike a keep-edge design).
@@ -126,7 +128,7 @@ Drop the `access:` block for `hermes.alekseev.us` (keep the route):
 
 1. **Static:** `./scripts/validate-stack.sh hermes` (compose parse; `hermes.alekseev.us` ingress keeps its route, loses `access:`; `hermes-browser` keeps `access:`).
 2. **OIDC login:** `hermes.alekseev.us` unauthenticated → redirect to CF OIDC → login → `/oauth/oidc/callback` → chat UI loads. No trusted-header dependency.
-3. **Admin preserved:** the merged account is your existing admin (not a new `pending` duplicate); admin panel accessible.
+3. **First login = admin:** the first OIDC login on the wiped DB lands as admin; admin panel accessible.
 4. **Identity:** the logged-in user is your real email.
 5. **Regression:** the dashboard (already OIDC) and `hermes-browser` (still edge-gated) are unaffected.
 6. **Break-glass rehearsal (optional):** confirm the backup-restore / `ENABLE_LOGIN_FORM=true` recovery path.
@@ -137,3 +139,4 @@ Drop the `access:` block for `hermes.alekseev.us` (keep the route):
 - **Structure:** **separate spec + plan**, sequenced after the dashboard cutover (flag if a single combined cutover is actually wanted). ✅ (interpretation)
 - **Inline vs Portainer:** non-secret `client_id` / `OPENID_PROVIDER_URL` **inline**; `OAUTH_CLIENT_SECRET` via **Portainer** `${OWUI_OIDC_CLIENT_SECRET}`. ✅
 - **`DEFAULT_USER_ROLE=user`** to preserve current auto-provisioning. ✅
+- **OWUI DB is disposable** (no critical data) → **clean-slate migration**: wipe the data dir, first OIDC login = admin; no merge-by-email, no backup-as-insurance. ✅
