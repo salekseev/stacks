@@ -61,8 +61,8 @@ Remove the basic-auth trio; add OIDC. Keep the enable/host/port lines.
 | `HERMES_DASHBOARD_HOST` | `0.0.0.0` | compose | unchanged (reached by cloudflared) |
 | `HERMES_DASHBOARD_PORT` | `9119` | compose | unchanged |
 | `HERMES_DASHBOARD_PUBLIC_URL` | `https://hermes-dashboard.alekseev.us` | compose | fixes the `/auth/callback` redirect URI behind the proxy |
-| `HERMES_DASHBOARD_OIDC_ISSUER` | `https://alekseev.cloudflareaccess.com/cdn-cgi/access/sso/oidc/<app-id>` | compose | non-secret; filled once the SaaS app exists |
-| `HERMES_DASHBOARD_OIDC_CLIENT_ID` | `<app-id>` | compose | non-secret; == the SaaS app id |
+| `HERMES_DASHBOARD_OIDC_ISSUER` | `https://alekseev.cloudflareaccess.com/cdn-cgi/access/sso/oidc/<app-id>` | `/opt/data/.env` | non-secret, but co-located with the secret on the host (as-built 2026-07-05) |
+| `HERMES_DASHBOARD_OIDC_CLIENT_ID` | `<app-id>` | `/opt/data/.env` | non-secret; == the SaaS app id |
 | `HERMES_DASHBOARD_OIDC_SCOPES` | `openid profile email` | compose | default; may omit |
 | `HERMES_DASHBOARD_OIDC_CLIENT_SECRET` | `${…}` | **`/opt/data/.env`** | gateway-only secret (confidential client) |
 | ~~`HERMES_DASHBOARD_BASIC_AUTH_USERNAME`~~ | — | — | **removed** |
@@ -91,7 +91,7 @@ Update the top-of-file `/opt/data/.env` documentation: remove `HERMES_DASHBOARD_
 | `HERMES_DASHBOARD_BASIC_AUTH_PASSWORD` (`.env`) | dashboard basic-auth | **removed** |
 | `HERMES_DASHBOARD_BASIC_AUTH_SECRET` (`.env`) | dashboard token-signing | **removed** |
 | `HERMES_DASHBOARD_OIDC_CLIENT_SECRET` (`.env`) | dashboard OIDC (confidential client) | **new** — from the Access SaaS-OIDC app |
-| `HERMES_DASHBOARD_OIDC_ISSUER` / `_CLIENT_ID` | dashboard OIDC | **new, non-secret** — inline in compose |
+| `HERMES_DASHBOARD_OIDC_ISSUER` / `_CLIENT_ID` | dashboard OIDC | **new, non-secret** — `/opt/data/.env` (as-built; co-located with the secret) |
 
 ## 6. Host-side migration (operator on `silverstone` / Cloudflare — assistant cannot reach these)
 
@@ -152,6 +152,6 @@ If, on review, you prefer belt-and-suspenders on this full machine-control surfa
 
 ## 12. Decisions — user-confirmed 2026-07-05
 
-- **(a) Inline vs Portainer for non-secret OIDC ids:** **inline in compose** (`issuer`, `client_id`), matching the hardcoded tunnel UUID convention. ✅ confirmed.
+- **(a) Placement of non-secret OIDC ids:** originally decided inline; **as-built 2026-07-05 the operator provisioned `issuer` + `client_id` in `/opt/data/.env`** alongside the secret — adopted (keeps the app-id out of this public repo; compose sets only `HERMES_DASHBOARD_PUBLIC_URL` inline). ✅
 - **(b) Edge posture:** **OIDC-only** (edge Access dropped for the dashboard host). ✅ confirmed. §8 remains the documented opt-in if defense-in-depth is ever wanted.
 - **(c) `drain` automation:** **excluded (YAGNI)**; §9 documents adding it later. ✅ confirmed (no objection raised).

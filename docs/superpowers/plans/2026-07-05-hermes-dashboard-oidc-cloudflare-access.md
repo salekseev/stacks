@@ -10,6 +10,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-07-03-hermes-dashboard-oidc-cloudflare-access-design.md`
 
+**Execution status (2026-07-05):** Task 1 **GO** (image `v2026.7.1` ships the `self_hosted` provider); Task 2 done (SaaS-OIDC app created); Task 3 **done — adapted to `.env`-only placement** (operator provisioned `issuer`/`client_id`/`secret` in `/opt/data/.env`; compose sets `HERMES_DASHBOARD_PUBLIC_URL` inline and does not hardcode the app-id), committed `9aa56f3`, `validate-stack.sh` passed. **Remaining:** Task 4 (remove the now-inert `HERMES_DASHBOARD_BASIC_AUTH_*` from `.env`), Task 5 (deploy + verify OIDC login), Task 6 (remove the dashboard host from the edge Access app).
+
 ---
 
 ## File Structure
