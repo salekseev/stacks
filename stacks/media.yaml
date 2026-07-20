@@ -3,7 +3,7 @@
 services:
 
   cloudflared:
-    image: cloudflare/cloudflared:2026.6.1
+    image: cloudflare/cloudflared:2026.7.2
     container_name: cloudflared
     command: --config /etc/cloudflared/config.yml tunnel run
     user: 568:568
@@ -65,7 +65,7 @@ services:
     restart: unless-stopped
 
   qui:
-    image: ghcr.io/hotio/qui:release-v1.22.0
+    image: ghcr.io/hotio/qui:release-v1.23.0
     container_name: qui
     env_file:
       - stack.env
@@ -81,7 +81,7 @@ services:
     restart: unless-stopped
 
   autobrr:
-    image: ghcr.io/s0up4200/autobrr-distroless:v1.81.0
+    image: ghcr.io/s0up4200/autobrr-distroless:v1.82.1
     container_name: autobrr
     user: nobody
     env_file:
@@ -126,7 +126,7 @@ services:
     restart: unless-stopped
 
   radarr:
-    image: ghcr.io/hotio/radarr:release-6.2.1.10461
+    image: ghcr.io/hotio/radarr:release-6.3.0.10514
     container_name: radarr
     env_file:
       - stack.env
@@ -175,7 +175,7 @@ services:
     restart: unless-stopped
 
   recyclarr:
-    image: ghcr.io/recyclarr/recyclarr:8.6.0
+    image: ghcr.io/recyclarr/recyclarr:8.7.0
     container_name: recyclarr
     user: 1000:1000
     env_file:
