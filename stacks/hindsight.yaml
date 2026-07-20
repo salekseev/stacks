@@ -3,7 +3,7 @@
 services:
 
   cloudflared:
-    image: cloudflare/cloudflared:2026.6.1
+    image: cloudflare/cloudflared:2026.7.2
     container_name: hindsight-cloudflared
     command: --config /etc/cloudflared/config.yml tunnel run
     user: 568:568
@@ -146,7 +146,7 @@ services:
     restart: unless-stopped
 
   litellm:
-    image: ghcr.io/berriai/litellm-non_root:v1.90.2
+    image: ghcr.io/berriai/litellm-non_root:v1.93.0
     container_name: hindsight-litellm
     entrypoint:
       - sh
