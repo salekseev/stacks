@@ -163,7 +163,7 @@ services:
 
   cloudflared:
     restart: unless-stopped
-    image: cloudflare/cloudflared:2026.7.2
+    image: cloudflare/cloudflared:2026.7.3
     container_name: hermes-cloudflared
     hostname: hermes-cloudflared
     command: --config /etc/cloudflared/config.yml tunnel run
