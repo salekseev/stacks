@@ -81,7 +81,7 @@ services:
     restart: unless-stopped
 
   autobrr:
-    image: ghcr.io/s0up4200/autobrr-distroless:v1.82.1
+    image: ghcr.io/s0up4200/autobrr-distroless:v1.83.0
     container_name: autobrr
     user: nobody
     env_file:
@@ -99,7 +99,7 @@ services:
     restart: unless-stopped
 
   prowlarr:
-    image: ghcr.io/hotio/prowlarr:release-2.4.0.5397
+    image: ghcr.io/hotio/prowlarr:release-2.5.2.5491
     container_name: prowlarr
     restart: unless-stopped
     env_file:
@@ -192,7 +192,7 @@ services:
     restart: unless-stopped
 
   seerr:
-    image: ghcr.io/seerr-team/seerr:v3.3.0
+    image: ghcr.io/seerr-team/seerr:v3.4.0
     container_name: seerr
     user: 1000:1000
     env_file:
