@@ -24,7 +24,7 @@ services:
     # redf0x1 fork of jo-inc/camofox-browser: same REST API, but ships the noVNC stack.
     # Server bearer = CAMOFOX_API_KEY (== CAMOFOX_SHARED_KEY). noVNC is on-demand via
     # POST /sessions/<userId>/toggle-display; x11vnc -nopw, gated only by Cloudflare Access.
-    image: ghcr.io/redf0x1/camofox-browser:2.4.6
+    image: ghcr.io/redf0x1/camofox-browser:2.4.7
     container_name: camofox
     hostname: camofox
     environment:
