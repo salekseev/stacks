@@ -37,7 +37,7 @@ services:
       - CAMOFOX_VNC_BASE_PORT=6080
       - CAMOFOX_VNC_RESOLUTION=1920x1080x24
       - CAMOFOX_HEADLESS=virtual
-      - CAMOFOX_VNC_TIMEOUT_MS=900000
+      - CAMOFOX_VNC_TIMEOUT_MS=86400000  # 24 hours (was 15 min) - prevent context restarts mid-operation
     volumes:
       - /mnt/spool/apps/data/hermes/camofox:/home/node/.camofox
     healthcheck:
