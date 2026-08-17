@@ -55,7 +55,7 @@ services:
     # Runs once at stack start and exits 0; hermes-gateway waits on service_completed_successfully.
     # user: root required — 1password/op runs as opuser by default, which cannot write to the
     # root-owned Docker named volume on first creation.
-    image: 1password/op:2.35.0
+    image: 1password/op:2.39.0
     container_name: hermes-op-init
     restart: "no"
     user: root
@@ -68,7 +68,7 @@ services:
     # First-party agent daemon. `gateway run` serves the OpenAI-compatible API on :8642 and
     # (HERMES_DASHBOARD=1) the dashboard on :9119 as a co-resident s6-rc service. s6 supervises
     # both, so a mis-start restarts in-container (no Docker crash-loop).
-    image: nousresearch/hermes-agent:v2026.7.30
+    image: nousresearch/hermes-agent:v2026.8.16
     container_name: hermes-gateway
     hostname: hermes-gateway
     command: gateway run
@@ -163,7 +163,7 @@ services:
 
   cloudflared:
     restart: unless-stopped
-    image: cloudflare/cloudflared:2026.7.3
+    image: cloudflare/cloudflared:2026.8.2
     container_name: hermes-cloudflared
     hostname: hermes-cloudflared
     command: --config /etc/cloudflared/config.yml tunnel run
