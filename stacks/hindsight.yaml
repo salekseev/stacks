@@ -78,6 +78,16 @@ services:
       # Was 1, tuned for llama.cpp --parallel 1. vLLM batches continuously and
       # the primary is a remote API, so serial calls were leaving both idle.
       HINDSIGHT_API_LLM_MAX_CONCURRENT: "4"
+      # Reasoning effort per operation. Unset sends no reasoning parameter at
+      # all, leaving luna on the Codex backend's own default; these pin it so
+      # thinking volume is a deliberate choice instead of an upstream default
+      # that can shift. Reflect is user-visible synthesis and gets the most;
+      # retain and consolidation are bulk work and sit at the medium floor.
+      # Member 1 keeps its own explicit `none`, so raising these never
+      # re-enables gemma-4's thinking block.
+      HINDSIGHT_API_REFLECT_LLM_REASONING_EFFORT: high
+      HINDSIGHT_API_RETAIN_LLM_REASONING_EFFORT: medium
+      HINDSIGHT_API_CONSOLIDATION_LLM_REASONING_EFFORT: medium
       # DB: bump asyncpg client timeout — pgvector ANN query in retain phase 1
       # exceeded the 60 s default once the facts table grew.
       HINDSIGHT_API_DB_COMMAND_TIMEOUT: "180"
