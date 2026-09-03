@@ -59,33 +59,110 @@ production in these ways, all driven by deployment findings:
    `POST /sessions/<userId>/toggle-display` (auto-expires after `CAMOFOX_VNC_TIMEOUT_MS`), and it
    runs `x11vnc -nopw`, so the viewer is gated solely by Cloudflare Access. `VNC_PASSWORD` is unused.
 
-### noVNC login-handoff runbook (redf0x1 on-demand viewer)
+### 10. Reverted to jo-inc upstream (2026-09-03) — supersedes as-built item 9
 
-redf0x1 has **no always-on VNC** — `hermes-browser.alekseev.us` returns 502 until a session's display
-is toggled on (by design, not a bug). The compose is already configured for it
-(`CAMOFOX_VNC_BASE_PORT=6080`, `CAMOFOX_VNC_RESOLUTION=1920x1080x24`, `CAMOFOX_VNC_TIMEOUT_MS=900000`;
-websockify binds `0.0.0.0:6080` once started). To do a login-handoff:
+**Item 9 above (the redf0x1 fork) is reversed.** Every reason recorded for leaving
+`jo-inc/camofox-browser` in June has since been fixed upstream, and the fork turned out to be the
+*cause* of the two symptoms this stack was suffering: a flaky noVNC login-handoff and the agent's
+tabs dying mid-task.
 
-1. Ensure exactly one `operator` session exists (the agent opens one for `CAMOFOX_USER_ID=operator`
-   on any browse; or create one manually with `POST /tabs`).
-2. Toggle the display on — Portainer → `camofox` → Console:
-   ```sh
-   curl -s -X POST http://localhost:9377/sessions/operator/toggle-display \
-     -H "Authorization: Bearer $CAMOFOX_API_KEY" -H "Content-Type: application/json" \
-     -d '{"headless":"virtual"}'
-   ```
-   Response includes a `vncUrl` when VNC started. (If it says "override saved" with no `vncUrl`,
-   there wasn't a single `operator` session — do step 1 and retry.)
-3. Open `https://hermes-browser.alekseev.us/vnc.html?autoconnect=true&resize=scale` — noVNC
-   auto-connects (x11vnc `-nopw`; Cloudflare Access is the gate). Log in by hand.
-4. The login persists to the `operator` profile volume; the agent's next browse reuses it. The
-   display auto-stops after `CAMOFOX_VNC_TIMEOUT_MS` (15 min) or on `{"headless":true}`.
+Verified against `jo-inc/camofox-browser` at v1.14.0 (2026-09-03):
 
-**Caveats:** `toggle-display` restarts the context (**drops open tabs**) — don't toggle mid-automation;
-`:6080` is a single shared viewer (one session at a time). **Stealth recommendation:** set
-`CAMOFOX_HEADLESS=virtual` on the camofox service so the agent always renders headed-in-Xvfb (stronger
-anti-detect than true-headless; matches the changedetection `--headless=false` lesson) — a separate
-change; reverify agent browsing after applying.
+| June blocker (item 9) | Status now |
+|---|---|
+| Published image ships noVNC broken/absent (#4314/#4933) | **Fixed.** `Dockerfile.ci:87` runs `scripts/install-plugin-deps.sh`, which enumerates `Object.keys(camofox.config.json.plugins)` and installs each plugin's `apt.txt` **regardless of its `enabled` flag**. `plugins/vnc/apt.txt` pulls `x11vnc`, `novnc`, `python3-websockify`, `net-tools`, `procps`. Runtime toggle is `ENABLE_VNC=1`. |
+| No way to bind a non-loopback host | **Fixed.** `CAMOFOX_BIND_HOST` added in v1.13.0. |
+| Server validates `CAMOFOX_ACCESS_KEY`, Hermes sends `CAMOFOX_API_KEY` (401) | **Fixed.** `lib/auth.js` makes `CAMOFOX_API_KEY` the primary bearer; `CAMOFOX_ACCESS_KEY` is an optional *additional* superkey and is deliberately left unset. |
+
+**The architectural reason this matters.** jo-inc's VNC plugin starts a watcher
+(`plugins/vnc/vnc-watcher.sh`) that finds Camoufox's Xvfb display and attaches `x11vnc` +
+`websockify`/noVNC **to the same display the agent renders on**, reattaching automatically when
+Camoufox relaunches. There is no `toggle-display` endpoint, no "exactly one session" precondition,
+and no tab invalidation. redf0x1's `POST /sessions/:userId/toggle-display`
+(`src/routes/core.ts:1391-1468`) starts a viewer only when the userId has exactly one session and
+always runs `closeSessionsForUser()` + `restartContext()` first. **The handoff fragility was
+fork-specific, not inherent to Camofox.**
+
+Also gained: per-user browser recovery that no longer disrupts other users (v1.14.0), timed-out
+actions retiring their tab instead of running on in the background (v1.14.0), zombie-context
+recovery during tab creation with a `newPageTimeoutMs` deadline + one retry (v1.13.0), IndexedDB
+persisted alongside cookies/localStorage (v1.13.0), and semver image tags on ghcr (Renovate-friendly).
+
+#### Variable mapping applied to `stacks/hermes.yaml`
+
+| redf0x1 (removed) | jo-inc (now) | Note |
+|---|---|---|
+| `CAMOFOX_HOST` | `CAMOFOX_BIND_HOST` | rename |
+| `CAMOFOX_PROFILES_DIR` | `CAMOFOX_PROFILE_DIR` | rename (jo-inc default is `~/.camofox/profiles`) |
+| `CAMOFOX_AUTH_MODE=required` | *(none)* | fork-only; **dropped, not renamed** |
+| `CAMOFOX_HEADLESS=virtual` | *(none)* | fork-only. jo-inc always renders in Xvfb; the VNC plugin overrides Camoufox's 1×1 default display |
+| `CAMOFOX_VNC_HOST` | `VNC_BIND` | **must be `0.0.0.0`** — the watcher defaults websockify to `127.0.0.1` (`vnc-watcher.sh:54`), which cloudflared cannot reach |
+| `CAMOFOX_VNC_BASE_PORT` | `NOVNC_PORT` | kept at 6080 so the `hermes-browser` ingress is unchanged |
+| `CAMOFOX_VNC_RESOLUTION` | `VNC_RESOLUTION` | depth optional; `1920x1080` is normalised to `…x24` (`vnc-launcher.js:33-36`) |
+| `CAMOFOX_VNC_TIMEOUT_MS` | *(none)* | fork-only; the jo-inc viewer is always-on, so nothing expires |
+| `CAMOFOX_SESSION_TIMEOUT` | `SESSION_TIMEOUT_MS` | **jo-inc default is tighter: 600000 (10 min) vs 30 min** (`lib/config.js:114`) |
+| `CAMOFOX_IDLE_TIMEOUT_MS` | `TAB_INACTIVITY_MS` | **jo-inc default 300000 (5 min)** (`lib/config.js:115`) |
+| `CAMOFOX_IDLE_EXIT_TIMEOUT_MS` | *(none)* | fork-only (jo-inc has no idle process exit) |
+| `CAMOFOX_FAILURE_THRESHOLD` | *(none — not configurable)* | `MAX_CONSECUTIVE_TIMEOUTS` is a hardcoded `3` (`server.js:505`). Acceptable: jo-inc calls `destroyTab()` on the offending tab (`server.js:1515-1518`) rather than closing the whole context, so a bot-walled page no longer takes the logged-in profile with it |
+| — | `MAX_OLD_SPACE_SIZE=4096` | **new and important**: the image CMD is `node --max-old-space-size=${MAX_OLD_SPACE_SIZE:-128}` (`Dockerfile.ci:94`). A 128 MB heap OOMs the wrapper under load and surfaces as 5xx from the REST API |
+| — | `shm_size: 2gb` (compose) | Docker's default `/dev/shm` is 64 MB; jo-inc raised its own compose to 2 GB in v1.13.0 |
+
+Hermes-side gateway variables are unchanged and all still valid: `CAMOFOX_URL`, `CAMOFOX_API_KEY`,
+`CAMOFOX_USER_ID=operator`, `CAMOFOX_SESSION_KEY=visible-tab`, `CAMOFOX_ADOPT_EXISTING_TAB=true`.
+
+`browser.camofox.managed_persistence` is deliberately **not** set: `tools/browser_camofox.py:213-215`
+treats `CAMOFOX_USER_ID` as a managed identity and only falls back to an ephemeral
+`hermes_<uuid>` userId (`:409-411`) when no override exists. Persistence keys on `CAMOFOX_USER_ID`.
+
+### noVNC login-handoff runbook (jo-inc always-on viewer)
+
+The redf0x1 procedure — reset sessions, create exactly one tab, `POST toggle-display`, check for a
+`vncUrl` — **no longer applies and must not be used.** jo-inc has no `toggle-display` endpoint.
+
+1. Open `https://hermes-browser.alekseev.us/vnc.html?autoconnect=true&resize=scale`. The viewer is
+   live whenever the container is up; x11vnc runs with no password and Cloudflare Access is the
+   only gate.
+2. Log in by hand — MFA, CAPTCHAs, consent banners.
+3. Nothing else. Cookies persist to the `operator` profile under `CAMOFOX_PROFILE_DIR`, and the
+   agent adopts the same display/profile (`CAMOFOX_ADOPT_EXISTING_TAB=true`).
+
+You are looking at the agent's own browser, so this is safe to do mid-task: opening the viewer
+neither restarts the context nor invalidates tabs. `GET /vnc/status` (bearer-authenticated) reports
+watcher state and the configured ports.
+
+**Security note, unchanged from the fork:** anyone who reaches `:6080` has full interactive control
+of a browser logged into your accounts. Nothing is published to the host; only cloudflared reaches
+it; Cloudflare Access is the sole authentication boundary. `VIEW_ONLY` stays unset because hands-on
+login is the point.
+
+### Hermes memory-pressure banner is a HOST reading (2026-09-02)
+
+`Your agent is running low on memory` / `kanban dispatch: system memory pressure is elevated` are not
+container-scoped and say nothing about the gateway's own footprint (observed RSS ~220 MB):
+
+- `gateway/lifecycle_ledger.py:sample_memory()` reads `/proc/meminfo` directly — **no cgroup
+  awareness**, so a container sees the Docker host's numbers.
+- `gateway/memory_status.py:classify_pressure()`: `elevated` when `MemAvailable` < 128 MiB **or**
+  < 15 % of `MemTotal`; `critical` at < 64 MiB or < 5 %.
+- `hermes_cli/kanban_db.py:10030` throttles dispatch to 1 worker/tick on `elevated`, 0 on `critical`.
+- There is **no env var or config key to disable or retune the guard** (neither module reads
+  `os.environ`), and `mem_limit` on the container does not change `/proc/meminfo`.
+- The `max_in_progress=8` in the log is `derive_default_max_in_progress()` = `clamp(MemTotal/512 MiB, 2, 8)`
+  — it only tells us the host has >= 4 GiB. Setting `kanban.max_in_progress` in `/opt/data/config.yaml`
+  silences that line but not the pressure guard.
+
+Because the host runs ZFS (`/mnt/spool`), the likely cause of a *persistent* banner is that **ZFS ARC
+is excluded from `MemAvailable`** (unreclaimable slab), so a healthy ARC-filled host reads as
+permanently "elevated". Diagnose on the Docker host:
+
+```sh
+grep -E 'MemTotal|MemAvailable|SwapTotal|SwapFree|^Slab|SReclaimable|SUnreclaim' /proc/meminfo
+awk '/^size|^c_max/ {print $1, $3/1024/1024" MiB"}' /proc/spl/kstat/zfs/arcstats
+docker stats --no-stream --format '{{.Name}}\t{{.MemUsage}}'
+```
+
+Cap `zfs_arc_max` if ARC is the consumer, or cap the offending container. Nothing on the Hermes side
+can suppress the banner.
 
 ---
 
