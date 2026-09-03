@@ -41,10 +41,18 @@ services:
       # --- server ---
       - CAMOFOX_BIND_HOST=0.0.0.0        # jo-inc name; was CAMOFOX_HOST on the fork
       - CAMOFOX_PORT=9377
+      # BOTH keys are required, and they are NOT redundant — they gate different routes:
+      #   CAMOFOX_ACCESS_KEY is the GLOBAL gate. accessKeyMiddleware (lib/auth.js:109-121) returns
+      #     next() immediately when it is unset, leaving every endpoint — navigate, evaluate
+      #     (arbitrary JS in a logged-in browser), cookie read — open to anything on hermes-net.
+      #     Verified live: without it, GET /tabs answered 200 with no Authorization header.
+      #   CAMOFOX_API_KEY only gates POST /sessions/:userId/cookies and /auth-sessions/*.
+      # Same value for both: Hermes sends the CAMOFOX_API_KEY value as its bearer, which the
+      # global gate then accepts.
       - CAMOFOX_API_KEY=${CAMOFOX_SHARED_KEY}
-      # CAMOFOX_ACCESS_KEY intentionally UNSET. On jo-inc it is an *additional* accepted bearer
-      # ("superkey", lib/auth.js), so setting it would only widen the credential surface.
-      # CAMOFOX_AUTH_MODE is NOT a jo-inc variable (fork-only) — dropped, not renamed.
+      - CAMOFOX_ACCESS_KEY=${CAMOFOX_SHARED_KEY}
+      # CAMOFOX_AUTH_MODE is NOT a jo-inc variable (fork-only) — dropped, not renamed. On jo-inc,
+      # "auth required" is expressed by setting CAMOFOX_ACCESS_KEY.
       - CAMOFOX_PROFILE_DIR=/home/node/.camofox/profiles   # jo-inc name; was CAMOFOX_PROFILES_DIR
       # --- interactive viewer (always on, no toggle) ---
       - ENABLE_VNC=1
