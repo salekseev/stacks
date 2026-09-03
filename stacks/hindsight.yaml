@@ -3,7 +3,7 @@
 services:
 
   cloudflared:
-    image: cloudflare/cloudflared:2026.8.2
+    image: cloudflare/cloudflared:2026.8.3
     container_name: hindsight-cloudflared
     command: --config /etc/cloudflared/config.yml tunnel run
     user: 568:568
