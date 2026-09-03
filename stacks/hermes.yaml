@@ -21,25 +21,64 @@ services:
 
   camofox:
     restart: unless-stopped
-    # redf0x1 fork of jo-inc/camofox-browser: same REST API, but ships the noVNC stack.
-    # Server bearer = CAMOFOX_API_KEY (== CAMOFOX_SHARED_KEY). noVNC is on-demand via
-    # POST /sessions/<userId>/toggle-display; x11vnc -nopw, gated only by Cloudflare Access.
-    image: ghcr.io/redf0x1/camofox-browser:2.4.7
+    # jo-inc/camofox-browser — UPSTREAM (moved back off the redf0x1 fork 2026-09-03).
+    # The fork was adopted 2026-06-30 because jo-inc's published image shipped noVNC
+    # broken/absent, had no bind-host setting, and validated CAMOFOX_ACCESS_KEY while Hermes
+    # sends CAMOFOX_API_KEY. All three are fixed upstream (v1.13.0 added CAMOFOX_BIND_HOST,
+    # zombie-context recovery and IndexedDB persistence; lib/auth.js makes CAMOFOX_API_KEY the
+    # primary bearer; plugins/vnc apt deps are baked in by scripts/install-plugin-deps.sh, which
+    # installs every plugin's apt.txt regardless of its enabled flag).
+    #
+    # Why the move matters: jo-inc's VNC plugin runs a WATCHER that attaches x11vnc + noVNC to the
+    # SAME Xvfb display Camoufox renders on and reattaches after a browser relaunch. There is no
+    # toggle-display call, no "exactly one session" precondition and no tab invalidation — which is
+    # what made the redf0x1 login-handoff flaky and dropped the agent's tabs mid-task.
+    # See docs/superpowers/specs/2026-06-30-hermes-stealth-browser-stack-design.md.
+    image: ghcr.io/jo-inc/camofox-browser:1.14.0
     container_name: camofox
     hostname: camofox
     environment:
-      - CAMOFOX_HOST=0.0.0.0
+      # --- server ---
+      - CAMOFOX_BIND_HOST=0.0.0.0        # jo-inc name; was CAMOFOX_HOST on the fork
       - CAMOFOX_PORT=9377
       - CAMOFOX_API_KEY=${CAMOFOX_SHARED_KEY}
-      - CAMOFOX_AUTH_MODE=required
-      - CAMOFOX_PROFILES_DIR=/home/node/.camofox/profiles
-      - CAMOFOX_VNC_HOST=0.0.0.0
-      - CAMOFOX_VNC_BASE_PORT=6080
-      - CAMOFOX_VNC_RESOLUTION=1920x1080x24
-      - CAMOFOX_HEADLESS=virtual
-      - CAMOFOX_VNC_TIMEOUT_MS=86400000  # 24 hours (was 15 min) - prevent context restarts mid-operation
+      # CAMOFOX_ACCESS_KEY intentionally UNSET. On jo-inc it is an *additional* accepted bearer
+      # ("superkey", lib/auth.js), so setting it would only widen the credential surface.
+      # CAMOFOX_AUTH_MODE is NOT a jo-inc variable (fork-only) — dropped, not renamed.
+      - CAMOFOX_PROFILE_DIR=/home/node/.camofox/profiles   # jo-inc name; was CAMOFOX_PROFILES_DIR
+      # --- interactive viewer (always on, no toggle) ---
+      - ENABLE_VNC=1
+      - VNC_BIND=0.0.0.0                 # REQUIRED: the watcher defaults websockify to 127.0.0.1
+                                         # (plugins/vnc/vnc-watcher.sh:54), which cloudflared cannot reach.
+      - NOVNC_PORT=6080                  # keeps the existing hermes-browser ingress unchanged
+      - VNC_RESOLUTION=1920x1080x24
+      # VNC_PASSWORD intentionally UNSET -> x11vnc runs with no password, exactly as before.
+      # Cloudflare Access on hermes-browser.alekseev.us is the ONLY gate on interactive control of
+      # a logged-in browser. Nothing is published to the host; only cloudflared reaches :6080.
+      # VIEW_ONLY must stay unset — the whole point is hands-on login.
+      # --- reaper hardening (re-expressed in jo-inc variable names) ---
+      # jo-inc's defaults are TIGHTER than the fork's, so these are more important, not less:
+      #   SESSION_TIMEOUT_MS default 600000 (10 min), TAB_INACTIVITY_MS default 300000 (5 min)
+      #   — lib/config.js:114-115, versus 30 min on redf0x1.
+      - SESSION_TIMEOUT_MS=14400000      # 4 hours
+      - TAB_INACTIVITY_MS=14400000       # 4 hours
+      # No jo-inc equivalent for the fork's CAMOFOX_FAILURE_THRESHOLD: MAX_CONSECUTIVE_TIMEOUTS is a
+      # hardcoded 3 (server.js:505). Acceptable — jo-inc destroys only the offending TAB
+      # (destroyTab, server.js:1515-1518) instead of closing the whole browser context, so a
+      # bot-walled site no longer takes the logged-in profile down with it.
+      # newPageTimeoutMs (zombie-context recovery, v1.13.0) is config-file-only, not env — left at
+      # its default; needs a mounted camofox.config.json to change.
+      # --- runtime ---
+      - MAX_OLD_SPACE_SIZE=4096          # image CMD defaults to --max-old-space-size=128
+                                         # (Dockerfile.ci:94). 128 MB OOMs the wrapper under load,
+                                         # which surfaces as 5xx from the REST API.
+      # Crash reporting left ENABLED for the trial week — it surfaces exactly the crash/hang data
+      # we are trying to characterise. Set CAMOFOX_CRASH_REPORT_ENABLED=false once the trial passes.
     volumes:
       - /mnt/spool/apps/data/hermes/camofox:/home/node/.camofox
+    # Docker's default /dev/shm is 64 MB; Firefox needs far more. jo-inc raised its own compose to
+    # 2 GB in v1.13.0 for browser stability — set it explicitly here rather than trusting the image.
+    shm_size: 2gb
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:9377/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 30s
