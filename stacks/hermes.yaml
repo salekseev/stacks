@@ -87,6 +87,15 @@ services:
     # Docker's default /dev/shm is 64 MB; Firefox needs far more. jo-inc raised its own compose to
     # 2 GB in v1.13.0 for browser stability — set it explicitly here rather than trusting the image.
     shm_size: 2gb
+    # Insurance, NOT an allocation. Docker limits are caps; nothing here grants memory, and the
+    # container was previously unlimited. Baseline is ~1 GiB RSS with one tab open, so 8 GiB is pure
+    # headroom — it exists so a Firefox/wrapper leak kills and restarts THIS container instead of
+    # pressuring the host, which runs with zero swap (an exhaustion there goes straight to the OOM
+    # killer rather than degrading). Tradeoff accepted: if the cap is ever reached, the browser dies
+    # mid-task. Note this does NOT affect Hermes' memory-pressure banner — that reads host
+    # /proc/meminfo with no cgroup awareness (gateway/lifecycle_ledger.py:sample_memory), so it is
+    # driven by ZFS ARC size, not by this stack.
+    mem_limit: 8g
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:9377/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 30s
