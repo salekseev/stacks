@@ -1,7 +1,17 @@
 # Hermes Camofox → Steel Browser Migration — Design Spec
 
 - **Date:** 2026-09-03
-- **Status:** Approved 2026-09-03 — design agreed; ready for implementation planning.
+- **Status:** **PAUSED 2026-09-03 — documented fallback, not the active plan.** Design is complete and
+  implementable as written; it is deliberately not being built yet. Root-cause analysis found the
+  flaky login-handoff and mid-task tab loss were **specific to the `redf0x1` camofox fork**, not to
+  Camofox: `jo-inc` upstream attaches its noVNC viewer to the agent's own Xvfb display with no
+  `toggle-display` call, no single-session precondition and no tab invalidation. `stacks/hermes.yaml`
+  therefore moved back to `ghcr.io/jo-inc/camofox-browser:1.14.0` (see
+  `2026-06-30-hermes-stealth-browser-stack-design.md` §10), which keeps Camoufox's C++-level Firefox
+  fingerprinting — the one thing Steel is unambiguously worse at (§10.1).
+  **Trigger to implement this spec:** the one-week jo-inc trial fails on 5xx or stability. If it fails
+  *only* on challenge pages despite a warm persistent profile, do **not** implement this — that is a
+  fingerprint regression and Steel would make it worse.
 - **Stack file:** `stacks/hermes.yaml` (new `steel-browser` service, `hermes-gateway` env, `cloudflared` ingress)
 - **Author:** brainstormed with Claude Code
 - **Supersedes (browser engine + remote-login handoff):** the `camofox` sections of
