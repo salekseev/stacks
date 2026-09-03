@@ -137,7 +137,7 @@ services:
     restart: unless-stopped
     # Daily chat client -> gateway /v1. No published ports: trusted-header SSO is only safe
     # because nothing but cloudflared can reach :8080 to forge Cf-Access-Authenticated-User-Email.
-    image: ghcr.io/open-webui/open-webui:v0.11.1
+    image: ghcr.io/open-webui/open-webui:v0.11.3
     container_name: open-webui
     hostname: open-webui
     depends_on:
