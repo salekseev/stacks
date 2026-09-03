@@ -94,7 +94,7 @@ persisted alongside cookies/localStorage (v1.13.0), and semver image tags on ghc
 |---|---|---|
 | `CAMOFOX_HOST` | `CAMOFOX_BIND_HOST` | rename |
 | `CAMOFOX_PROFILES_DIR` | `CAMOFOX_PROFILE_DIR` | rename (jo-inc default is `~/.camofox/profiles`) |
-| `CAMOFOX_AUTH_MODE=required` | *(none)* | fork-only; **dropped, not renamed** |
+| `CAMOFOX_AUTH_MODE=required` | `CAMOFOX_ACCESS_KEY` | The fork gated everything on one key. On jo-inc, **`CAMOFOX_ACCESS_KEY` is the global gate** — `accessKeyMiddleware` (`lib/auth.js:109-121`) passes every request through when it is unset, and `CAMOFOX_API_KEY` covers only `POST /sessions/:userId/cookies` and `/auth-sessions/*`. Both are set to `${CAMOFOX_SHARED_KEY}`; Hermes sends the API_KEY value as its bearer and the global gate accepts it. Leaving ACCESS_KEY unset (as first deployed, 2026-09-03) left the whole REST API open to anything on `hermes-net` — confirmed live by an unauthenticated `GET /tabs` returning 200 |
 | `CAMOFOX_HEADLESS=virtual` | *(none)* | fork-only. jo-inc always renders in Xvfb; the VNC plugin overrides Camoufox's 1×1 default display |
 | `CAMOFOX_VNC_HOST` | `VNC_BIND` | **must be `0.0.0.0`** — the watcher defaults websockify to `127.0.0.1` (`vnc-watcher.sh:54`), which cloudflared cannot reach |
 | `CAMOFOX_VNC_BASE_PORT` | `NOVNC_PORT` | kept at 6080 so the `hermes-browser` ingress is unchanged |
