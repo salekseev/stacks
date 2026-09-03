@@ -65,7 +65,7 @@ services:
     restart: unless-stopped
 
   qui:
-    image: ghcr.io/hotio/qui:release-v1.26.0
+    image: ghcr.io/hotio/qui:release-v1.28.0
     container_name: qui
     env_file:
       - stack.env
@@ -81,7 +81,7 @@ services:
     restart: unless-stopped
 
   autobrr:
-    image: ghcr.io/s0up4200/autobrr-distroless:v1.84.0
+    image: ghcr.io/s0up4200/autobrr-distroless:v1.85.0
     container_name: autobrr
     user: nobody
     env_file:
@@ -212,7 +212,7 @@ services:
     restart: unless-stopped
 
   tautulli:
-    image: ghcr.io/tautulli/tautulli:v2.17.2
+    image: ghcr.io/tautulli/tautulli:v2.18.1
     container_name: tautulli
     env_file:
       - stack.env
