@@ -68,7 +68,7 @@ services:
     # First-party agent daemon. `gateway run` serves the OpenAI-compatible API on :8642 and
     # (HERMES_DASHBOARD=1) the dashboard on :9119 as a co-resident s6-rc service. s6 supervises
     # both, so a mis-start restarts in-container (no Docker crash-loop).
-    image: nousresearch/hermes-agent:v2026.8.27
+    image: nousresearch/hermes-agent:v2026.8.31
     container_name: hermes-gateway
     hostname: hermes-gateway
     command: gateway run
