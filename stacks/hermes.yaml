@@ -34,7 +34,7 @@ services:
     # toggle-display call, no "exactly one session" precondition and no tab invalidation — which is
     # what made the redf0x1 login-handoff flaky and dropped the agent's tabs mid-task.
     # See docs/superpowers/specs/2026-06-30-hermes-stealth-browser-stack-design.md.
-    image: ghcr.io/jo-inc/camofox-browser:1.14.0
+    image: ghcr.io/jo-inc/camofox-browser:1.16.0
     container_name: camofox
     hostname: camofox
     environment:
@@ -219,7 +219,7 @@ services:
 
   cloudflared:
     restart: unless-stopped
-    image: cloudflare/cloudflared:2026.8.3
+    image: cloudflare/cloudflared:2026.9.3
     container_name: hermes-cloudflared
     hostname: hermes-cloudflared
     command: --config /etc/cloudflared/config.yml tunnel run
