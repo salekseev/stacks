@@ -3,7 +3,7 @@
 services:
 
   cloudflared:
-    image: cloudflare/cloudflared:2026.9.3
+    image: cloudflare/cloudflared:2026.10.0
     container_name: cloudflared
     command: --config /etc/cloudflared/config.yml tunnel run
     user: 568:568
@@ -81,7 +81,7 @@ services:
     restart: unless-stopped
 
   autobrr:
-    image: ghcr.io/s0up4200/autobrr-distroless:v1.87.0
+    image: ghcr.io/s0up4200/autobrr-distroless:v1.88.0
     container_name: autobrr
     user: nobody
     env_file:
