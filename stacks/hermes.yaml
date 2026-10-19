@@ -111,7 +111,7 @@ services:
     # Runs once at stack start and exits 0; hermes-gateway waits on service_completed_successfully.
     # user: root required — 1password/op runs as opuser by default, which cannot write to the
     # root-owned Docker named volume on first creation.
-    image: 1password/op:2.40.0
+    image: 1password/op:2.41.0
     container_name: hermes-op-init
     restart: "no"
     user: root
@@ -193,7 +193,7 @@ services:
     restart: unless-stopped
     # Daily chat client -> gateway /v1. No published ports: trusted-header SSO is only safe
     # because nothing but cloudflared can reach :8080 to forge Cf-Access-Authenticated-User-Email.
-    image: ghcr.io/open-webui/open-webui:v0.11.4
+    image: ghcr.io/open-webui/open-webui:v0.12.3
     container_name: open-webui
     hostname: open-webui
     depends_on:
