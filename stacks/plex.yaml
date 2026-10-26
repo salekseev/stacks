@@ -1,6 +1,6 @@
 services:
   plex:
-    image: plexinc/pms-docker:plexpass@sha256:8aeb4a982ea564ad309861dd251cd9e218aac3f4e4d3da21375568341be1b16f
+    image: plexinc/pms-docker:plexpass@sha256:e5def02c2d81a3f93558f9ee772edaaf6d479b317961f4e67d5a2b7cd46a1629
     container_name: plex
     ports:
       - 32400:32400/tcp
