@@ -34,7 +34,7 @@ services:
     restart: unless-stopped
 
   qbittorrent:
-    image: ghcr.io/hotio/qbittorrent:release-5.2.4
+    image: ghcr.io/hotio/qbittorrent:release-5.3.0
     container_name: qbittorrent
     cap_add:
       - NET_ADMIN
@@ -65,7 +65,7 @@ services:
     restart: unless-stopped
 
   qui:
-    image: ghcr.io/hotio/qui:release-v1.32.0
+    image: ghcr.io/hotio/qui:release-v1.35.0
     container_name: qui
     env_file:
       - stack.env
@@ -81,7 +81,7 @@ services:
     restart: unless-stopped
 
   autobrr:
-    image: ghcr.io/s0up4200/autobrr-distroless:v1.88.0
+    image: ghcr.io/s0up4200/autobrr-distroless:v1.90.0
     container_name: autobrr
     user: nobody
     env_file:
@@ -99,7 +99,7 @@ services:
     restart: unless-stopped
 
   prowlarr:
-    image: ghcr.io/hotio/prowlarr:release-2.6.5.5623
+    image: ghcr.io/hotio/prowlarr:release-2.7.0.5723
     container_name: prowlarr
     restart: unless-stopped
     env_file:
