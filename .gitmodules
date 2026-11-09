@@ -1,0 +1,15 @@
+[submodule "stacks/yandex-station/https-proxy"]
+	path = stacks/yandex-station/https-proxy
+	url = https://github.com/v3rt3p/https-proxy.git
+[submodule "stacks/yandex-station/quasar-server"]
+	path = stacks/yandex-station/quasar-server
+	url = https://github.com/v3rt3p/quasar-server.git
+[submodule "stacks/yandex-station/quasistreaming-gigam"]
+	path = stacks/yandex-station/quasistreaming-gigam
+	url = https://github.com/v3rt3p/quasistreaming-gigam.git
+[submodule "stacks/yandex-station/supertonic-tts"]
+	path = stacks/yandex-station/supertonic-tts
+	url = https://github.com/v3rt3p/supertonic-tts.git
+[submodule "stacks/yandex-station/processor"]
+	path = stacks/yandex-station/processor
+	url = https://github.com/v3rt3p/processor.git
