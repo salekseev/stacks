@@ -1,0 +1,87 @@
+# Builds the v3rt3p backend images from the vendored submodules and publishes
+# them as PUBLIC ghcr.io packages (the CA key bundled by https-proxy is the
+# all-zero public placeholder — see spec §5.5 — so no image contains secrets).
+#
+# Tag contract: each image is tagged with the SHORT SHA (7) of its submodule
+# pin — the tag is derived, never hand-written. stacks/yandex-station.yaml
+# pins image: to the same SHA; bump the submodule and the image tag together
+# in one commit. PRs build for verification (no push); master pushes.
+#
+# Design: docs/superpowers/specs/2026-11-08-yandex-station-midi-self-host-design.md
+# Plan:   docs/superpowers/plans/2026-11-08-yandex-station-midi-self-host.md
+name: v3rt3p images
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - stacks/yandex-station/**
+      - stacks/yandex-station.yaml
+      - .github/workflows/v3rt3p-images.yml
+  pull_request:
+    paths:
+      - stacks/yandex-station/**
+      - stacks/yandex-station.yaml
+      - .github/workflows/v3rt3p-images.yml
+  workflow_dispatch:
+
+concurrency:
+  group: v3rt3p-images-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: https-proxy
+            dockerfile: Dockerfile
+          - service: quasar-server
+            dockerfile: Dockerfile
+          # CPU variant only; the cuda variant (Dockerfile.cuda) is a
+          # documented follow-up (spec §10).
+          - service: quasistreaming-gigam
+            dockerfile: Dockerfile.cpu
+          - service: supertonic-tts
+            dockerfile: Dockerfile
+          - service: processor
+            dockerfile: Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Image coordinates (tag = submodule short SHA)
+        id: meta
+        run: |
+          short=$(git -C "stacks/yandex-station/${{ matrix.service }}" rev-parse --short=7 HEAD)
+          echo "tag=${short}" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/${{ github.repository_owner }}/v3rt3p-${{ matrix.service }}" >> "$GITHUB_OUTPUT"
+
+      - name: Login to GHCR
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: stacks/yandex-station/${{ matrix.service }}
+          file: stacks/yandex-station/${{ matrix.service }}/${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          push: ${{ github.event_name == 'push' }}
+          tags: |
+            ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}
+            ${{ steps.meta.outputs.image }}:latest
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,scope=${{ matrix.service }},mode=max
