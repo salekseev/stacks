@@ -1,22 +1,23 @@
 # $schema: https://raw.githubusercontent.com/compose-spec/compose-spec/refs/heads/main/schema/compose-spec.json
 #
-# Yandex Station self-hosted backend (v3rt3p). Impersonates Yandex cloud so the
-# rooted Midi resolves quasar.yandex.net/.ru, scbh.yandex.net, ntp.yantp.net, etc.
-# to silverstone:80/:443 (+ udp/123 NTP). DNS is not in this file. OPNsense
-# Unbound on IoT (opt1, VLAN 99, ix2_vlan99, 192.168.99.0/24) answers the
-# hijack list from stacks/yandex-station/unbound-iot-view.conf. LAN keeps
-# public DNS. Trust is via the eMudhra intermediate CA shipped by https-proxy
-# (subject CN=EM EV TLS CA - G3C; the pinned key's scalar is 56 and it matches
-# ca.crt — see spec §5.5). Sockets bind 192.168.1.10 so the Tailscale address
-# is not a listener. Start this file only after lite-kit has released :80 and :443.
+# Yandex Station self-hosted backend (v3rt3p). The speaker reaches this stack
+# on the IoT VLAN. https-proxy holds SPEAKER_IP (TCP 80 and 443). quasar-server
+# shares that network namespace so the control API on TCP 31116 is the same
+# address. ntp-server holds NTP_IP (UDP 123). Host Overrides must agree:
+# the HTTPS names and ntp.yantp.net are separate addresses.
 #
-# Secrets are interpolated from the host env file at deploy time:
+# ipvlan L2 parent is the host VLAN 99 interface (IOT_PARENT). The container
+# addresses are not host ports, so the TrueNAS UI can keep *:80 and *:443.
+# postgres, processor, quasistreaming-gigam, and supertonic-tts stay on the
+# stack network. https-proxy is on both, and quasar-server uses that namespace,
+# so those service names still resolve.
+#
+# Required in the env file: IOT_PARENT, SPEAKER_IP, NTP_IP.
 #   docker compose -f stacks/yandex-station.yaml --env-file \
 #     /mnt/spool/apps/config/yandex-station/v3rt3p/.env up -d
 # (compose does NOT auto-read the config-dir .env; the flag is required).
 # `up -d` pulls the five ghcr images. Append `--build` only for an air-gap
-# rebuild from the vendored submodules. Install the Unbound view before the
-# button reset; this file does not render it.
+# rebuild from the vendored submodules.
 #
 # Build contexts are five vendored git submodules under stacks/yandex-station/.
 # postgres and ntp-server are registry images.
@@ -26,7 +27,7 @@
 services:
   # Public entry: NGINX on :80/:443, eMudhra CA, per-domain P-384 certs at runtime.
   # YANDEX_UPSTREAM_URL overrides the first line of domains/yandex.txt (generate.sh
-  # "<LIST>_UPSTREAM_URL" contract). Full domain set: stacks/yandex-station/https-proxy/domains/yandex.txt
+  # "<LIST>_UPSTREAM_URL" contract). quasar-server listens in this namespace.
   https-proxy:
     # image tag == short SHA of the submodule pin (built+pushed public by
     # .github/workflows/v3rt3p-images.yml); bump both together. `up -d` pulls;
@@ -36,21 +37,22 @@ services:
       context: ./yandex-station/https-proxy
     container_name: v3rt3p-https-proxy
     restart: unless-stopped
-    ports:
-      - "192.168.1.10:80:80"    # address-bound; host mode would also listen on Tailscale
-      - "192.168.1.10:443:443"
     environment:
-      YANDEX_UPSTREAM_URL: http://quasar-server:31115
-    depends_on:
-      - quasar-server
+      YANDEX_UPSTREAM_URL: http://127.0.0.1:31115
+    networks:
+      default: {}
+      iot:
+        ipv4_address: ${SPEAKER_IP:?set SPEAKER_IP}
 
   # Main "maind" protocol server (Quasar backend emulator).
+  # Shares https-proxy's namespace: 31115 and 31116 are on SPEAKER_IP.
   quasar-server:
     image: ghcr.io/salekseev/v3rt3p-quasar-server:fefcd58
     build:
       context: ./yandex-station/quasar-server
     container_name: v3rt3p-quasar-server
     restart: unless-stopped
+    network_mode: service:https-proxy
     environment:
       ALLOW_UPDATES: "true"
       PORT: "31115"
@@ -60,9 +62,8 @@ services:
       PROCESSOR_BASIC_URL: http://processor:8080    # base URL; processor appends its route
       STT_GIGAAM_URL: ws://quasistreaming-gigam:8080
       POSTGRES_URL: postgres://quasar:${POSTGRES_PASSWORD:-change-me}@postgres:5432/quasar
-    ports:
-      - "192.168.1.10:31116:31116"   # speaker control API; IoT firewall pass covers it with :80/:443
     depends_on:
+      - https-proxy
       - postgres
       - processor
       - quasistreaming-gigam
@@ -132,18 +133,28 @@ services:
       - /mnt/spool/apps/config/yandex-station/v3rt3p/prompts/prompt-state.handlebars:/prompt-state.handlebars:ro
       - /mnt/spool/apps/config/yandex-station/v3rt3p/prompts/prompt-functions.handlebars:/prompt-functions.handlebars:ro
 
-  # Required for the local backend. ntp.yantp.net is an A record in the IoT
-  # Unbound view, not a host override. UDP/123 does not overlap lite-kit.
-  # This service starts with the rest of the stack after lite-kit stops.
+  # ntp.yantp.net is its own Host Override, so this address is not SPEAKER_IP.
   ntp-server:
     image: cturra/ntp:latest
     container_name: v3rt3p-ntp
     restart: unless-stopped
-    ports:
-      - "192.168.1.10:123:123/udp"
     environment:
       NTP_SERVERS: time1.google.com,time2.google.com,time.cloudflare.com
+    networks:
+      iot:
+        ipv4_address: ${NTP_IP:?set NTP_IP}
 
   # Healthchecks omitted by default (upstream images ship no proven probes for
   # these builds); add per service once a readiness signal is evidenced — the
   # real trust check is TLS to https://quasar.yandex.net on :443.
+
+networks:
+  iot:
+    driver: ipvlan
+    driver_opts:
+      parent: ${IOT_PARENT:?set IOT_PARENT to the VLAN 99 interface}
+      ipvlan_mode: l2
+    ipam:
+      config:
+        - subnet: 192.168.99.0/24
+          gateway: 192.168.99.1
