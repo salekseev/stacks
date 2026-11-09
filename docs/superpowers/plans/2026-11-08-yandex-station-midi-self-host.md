@@ -10,6 +10,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-11-08-yandex-station-midi-self-host-design.md`
 
+**Status:** repo-side steps done on this branch (2026-11-09): contrib files, v3rt3p submodules, `stacks/yandex-station.yaml` (validated). Device, silverstone-host, and OPNsense steps remain gated on Phase 0. Upstream-contract corrections are applied inline (dropbear path, gigam models, processor env names).
+
 **Working branch:** `feature/yandex-station-midi-self-host` (create in Task 0 Step 0).
 
 ---
@@ -43,7 +45,7 @@ Placeholder values to fill on the device and record:
 | `stacks/yandex-station.yaml` | The v3rt3p backend stack: 6 containers, `.env`, model assets, healthchecks | Created — committed in Task 4 |
 | build repos vendored (git submodules under `stacks/yandex-station/`) | `https-proxy`, `quasar-server`, `quasistreaming-gigam`, `supertonic-tts`, `processor` | Added in Task 3 |
 | `/mnt/spool/apps/config/yandex-station/v3rt3p/.env` (host, silverstone) | `POSTGRES_PASSWORD`, LLM `OPENAI_*` — secrets out of YAML | Created in Task 3 |
-| `/mnt/spool/apps/config/yandex-station/v3rt3p/models/` (host, silverstone, RO) | GigaAM ONNX + supertonic TTS model assets | Staged in Task 3 |
+| `/mnt/spool/apps/config/yandex-station/v3rt3p/supertonic-tts-assets/` (host, silverstone, RO) | supertonic TTS model assets (unzipped); GigaAM ASR models self-download to the data cache — no staging | Staged in Task 3 |
 | `/mnt/spool/apps/config/yandex-station/v3rt3p/prompts/` (host, silverstone, RO) | `processor` handlebars templates | Staged in Task 3 |
 | `/mnt/spool/apps/data/yandex-station/v3rt3p/` (host, silverstone) | Postgres data + GigaAM cache | Created in Task 3 |
 | `~/lite-kit/` (host, silverstone) | Phase 1 unlock + OTA-downgrade stand | Created/staged in Task 2, removed in Task 5 |
@@ -106,7 +108,7 @@ Expected: `ro.build.display.id` is either the downgraded trusted build or (surpr
 - Create: `contrib/bin/dropbear`, `contrib/bin/dropbearkey` (from Marker284/yandex-station-binaries)
 - Create: `contrib/etc/init.d/S99zdropbear` (init script for autostart)
 
-- [ ] **Step 1: create contrib directory structure**
+- [x] **Step 1: create contrib directory structure**
 
 ```bash
 mkdir -p /home/salekseev/src/github.com/salekseev/stacks/contrib/bin /home/salekseev/src/github.com/salekseev/stacks/contrib/etc/init.d
@@ -114,7 +116,7 @@ mkdir -p /home/salekseev/src/github.com/salekseev/stacks/contrib/bin /home/salek
 
 Expected: directories created.
 
-- [ ] **Step 2: fetch & place yandex-noupdate.sh**
+- [x] **Step 2: fetch & place yandex-noupdate.sh**
 
 Download from `https://raw.githubusercontent.com/Marker284/yandex-station-extended/main/contrib/yandex-noupdate.sh`:
 
@@ -125,20 +127,20 @@ chmod +x /home/salekseev/src/github.com/salekseev/stacks/contrib/yandex-noupdate
 
 Expected: file exists and is executable.
 
-- [ ] **Step 3: fetch dropbear binaries**
+- [x] **Step 3: fetch dropbear binaries**
 
-Download from `https://github.com/Marker284/yandex-station-binaries` (e.g., `arm64-v8a` for Amlogic A5):
+Download from `https://github.com/Marker284/yandex-station-binaries` — verified path is `bin/` (not `arm/`): the shipped `dropbear`/`dropbearkey` are **static 32-bit ARM (armhf/EABI5)** builds, the ones the hackalice ecosystem ships for these stations; Amlogic A5 (Cortex-A55) executes AArch32. Confirm `ro.product.cpu.abi` in Phase 0 Step 3 and verify the binary runs before Task 1 Step 8.
 
 ```bash
-# Fetch dropbear and dropbearkey for ARM
-curl -fsSL https://github.com/Marker284/yandex-station-binaries/raw/main/arm/dropbear -o /home/salekseev/src/github.com/salekseev/stacks/contrib/bin/dropbear
-curl -fsSL https://github.com/Marker284/yandex-station-binaries/raw/main/arm/dropbearkey -o /home/salekseev/src/github.com/salekseev/stacks/contrib/bin/dropbearkey
+# Fetch dropbear and dropbearkey (static armhf)
+curl -fsSL https://github.com/Marker284/yandex-station-binaries/raw/main/bin/dropbear -o /home/salekseev/src/github.com/salekseev/stacks/contrib/bin/dropbear
+curl -fsSL https://github.com/Marker284/yandex-station-binaries/raw/main/bin/dropbearkey -o /home/salekseev/src/github.com/salekseev/stacks/contrib/bin/dropbearkey
 chmod +x /home/salekseev/src/github.com/salekseev/stacks/contrib/bin/dropbear /home/salekseev/src/github.com/salekseev/stacks/contrib/bin/dropbearkey
 ```
 
 Expected: both binaries exist and are executable.
 
-- [ ] **Step 4: create S99zdropbear init script**
+- [x] **Step 4: create S99zdropbear init script**
 
 ```bash
 cat > /home/salekseev/src/github.com/salekseev/stacks/contrib/etc/init.d/S99zdropbear << 'EOF'
@@ -207,7 +209,7 @@ Expected: key file generated (output: `Generating key, this may take a while...`
 
 Expected: Dropbear starts (may log to syslog; `netstat -an | grep 2222` on device should show listening).
 
-- [ ] **Step 11: commit the contrib files**
+- [x] **Step 11: commit the contrib files** (done repo-side 2026-11-09; device push of Steps 7–10 still gated on Phase 0)
 
 ```bash
 cd /home/salekseev/src/github.com/salekseev/stacks
@@ -278,27 +280,23 @@ Expected: resolves to silverstone's IP once the OPNsense override from Task 6 is
 **Why:** v3rt3p is the persistent backend. It is **six cooperating container builds**, not a single source build. Stage the build repos, model assets, prompts, and `.env` here; compose + deploy in Tasks 4–5.
 
 **Files:**
-- Vend: the five `v3rt3p/*` build repos (as git submodules under `stacks/yandex-station/`, or cloned on silverstone).
+- Vend: the five `v3rt3p/*` build repos (as git submodules under `stacks/yandex-station/`, or cloned on silverstone). **Done on this branch.**
 - Create: `/mnt/spool/apps/config/yandex-station/v3rt3p/` (compose, `.env`, prompts).
-- Create: `/mnt/spool/apps/config/yandex-station/v3rt3p/models/` (RO: GigaAM ONNX + supertonic TTS).
+- Create: `/mnt/spool/apps/config/yandex-station/v3rt3p/supertonic-tts-assets/` (RO: supertonic TTS model). GigaAM ASR models are **self-downloaded** into the data cache at first run — per the upstream README, do **not** pre-copy legacy GigaAM ONNX/token files into that cache.
 - Create: `/mnt/spool/apps/data/yandex-station/v3rt3p/` (Postgres + ASR cache).
 
 - [ ] **Step 1: prepare host config/data directories** (on silverstone)
 
 ```bash
-! ssh silverstone 'sudo install -d -o 568 -g 568 -m 700 /mnt/spool/apps/config/yandex-station/v3rt3p/models /mnt/spool/apps/config/yandex-station/v3rt3p/prompts /mnt/spool/apps/data/yandex-station/v3rt3p/postgres-data /mnt/spool/apps/data/yandex-station/v3rt3p/gigaam-cache'
+! ssh silverstone 'sudo install -d -o 568 -g 568 -m 700 /mnt/spool/apps/config/yandex-station/v3rt3p/supertonic-tts-assets /mnt/spool/apps/config/yandex-station/v3rt3p/prompts /mnt/spool/apps/data/yandex-station/v3rt3p/postgres-data /mnt/spool/apps/data/yandex-station/v3rt3p/gigaam-cache'
 ```
 
 Expected: directories created with correct ownership (uid/gid 568 = `apps` user).
 
-- [ ] **Step 2: stage model + prompt assets** (download the ONNX ASR models, the TTS model zip, and the processor prompt templates)
+- [ ] **Step 2: stage model + prompt assets** (download the TTS model zip and the processor prompt templates; no ASR asset staging — see Files note above)
 
 ```bash
 ! ssh silverstone 'cd /mnt/spool/apps/config/yandex-station/v3rt3p && \
-mkdir -p models supertonic-tts-assets && \
-wget https://v3rt3p-storage.re146.dev/quasistreaming-gigaam/gigaam_v3_e2e_ctc.onnx -O models/gigaam_v3_e2e_ctc.onnx && \
-wget https://v3rt3p-storage.re146.dev/quasistreaming-gigaam/gigaam_v3_e2e_ctc_tokens.txt -O models/gigaam_v3_e2e_ctc_tokens.txt && \
-wget https://v3rt3p-storage.re146.dev/quasistreaming-gigaam/silero_vad.onnx -O models/silero_vad.onnx && \
 wget https://v3rt3p-storage.re146.dev/supertonic-tts-model.zip -O supertonic-tts-assets/model.zip && unzip -o supertonic-tts-assets/model.zip -d supertonic-tts-assets/ && rm -f supertonic-tts-assets/model.zip && \
 wget https://raw.githubusercontent.com/v3rt3p/processor/refs/heads/master/prompt.handlebars -O prompts/prompt.handlebars && \
 wget https://raw.githubusercontent.com/v3rt3p/processor/refs/heads/master/prompt-state.handlebars -O prompts/prompt-state.handlebars && \
@@ -307,7 +305,7 @@ wget https://raw.githubusercontent.com/v3rt3p/processor/refs/heads/master/prompt
 
 Expected: model assets and prompts staged read-only.
 
-- [ ] **Step 3: vend the build repos locally** (so the stack is self-contained, not dependent on remote `build:` URLs)
+- [x] **Step 3: vend the build repos locally** (so the stack is self-contained, not dependent on remote `build:` URLs) — **done on this branch 2026-11-09**
 
 ```bash
 ! ssh silverstone 'cd /home/salekseev/src/github.com/salekseev/stacks && git submodule add https://github.com/v3rt3p/https-proxy.git stacks/yandex-station/https-proxy && git submodule add https://github.com/v3rt3p/quasar-server.git stacks/yandex-station/quasar-server && git submodule add https://github.com/v3rt3p/quasistreaming-gigam.git stacks/yandex-station/quasistreaming-gigam && git submodule add https://github.com/v3rt3p/supertonic-tts.git stacks/yandex-station/supertonic-tts && git submodule add https://github.com/v3rt3p/processor.git stacks/yandex-station/processor'
@@ -330,7 +328,7 @@ EOF
 chmod 600 /mnt/spool/apps/config/yandex-station/v3rt3p/.env'
 ```
 
-Expected: `.env` present with mode 600; every placeholder filled before Task 5.
+Expected: `.env` present with mode 600; every placeholder filled before Task 5. **Compose does not auto-read this path** — it is passed explicitly with `--env-file` at deploy time (Task 5 Step 3).
 
 - [ ] **Step 5: commit staging** (assets + submodules). Expected: commit succeeds.
 
@@ -356,9 +354,9 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 **Files:**
 - Create: `stacks/yandex-station.yaml` (v3rt3p compose tailored to this repo's conventions)
 
-- [ ] **Step 1: write `stacks/yandex-station.yaml`**
+- [x] **Step 1: write `stacks/yandex-station.yaml`** (done 2026-11-09, with the upstream-contract corrections noted above)
 
-Design (see spec §5.1/§5.2 — build contexts vendored as submodules, host ports bound to `192.168.1.10`, `.env` for secrets). This mirrors the v3rt3p `docker-compose.yml` but uses **local** build contexts (submodules) and binds the LAN IP.
+Design (see spec §5.1/§5.2 — build contexts vendored as submodules, host ports bound to `192.168.1.10`, `.env` for secrets). This mirrors the upstream `v3rt3p/v3rt3p.github.io` `docker-compose.yml` (the canonical deployment manifest, verified 2026-11-09) but uses **local** build contexts (submodules) and binds the LAN IP. Env values must be `${VAR:-default}` **compose interpolations, not `<placeholder>` literals**; secrets come from the config-dir `.env` via `--env-file` (Task 5).
 
 ```yaml
 # $schema: https://raw.githubusercontent.com/compose-spec/compose-spec/refs/heads/main/schema/compose-spec.json
@@ -395,8 +393,8 @@ services:
       PORT: "31115"
       API_PORT: "31116"
       TTS_OPENAI_BASE_URL: http://supertonic-tts:9150
-      TTS_OPENAI_VOICE: "<TTS_VOICE>"
-      PROCESSOR_BASIC_URL: http://processor:8080/process
+      TTS_OPENAI_VOICE: "${TTS_VOICE:-F1}"          # supertonic voices: M1–M5, F1–F5
+      PROCESSOR_BASIC_URL: http://processor:8080    # base URL; processor appends its route
       STT_GIGAAM_URL: ws://quasistreaming-gigam:8080
       POSTGRES_URL: postgres://quasar:${POSTGRES_PASSWORD:-change-me}@postgres:5432/quasar
     ports:
@@ -418,7 +416,9 @@ services:
     volumes:
       - /mnt/spool/apps/data/yandex-station/v3rt3p/postgres-data:/var/lib/postgresql/data
 
-  # ASR: GigaAM. Default CPU; set <GIGAAM_DEVICE> to cuda for GPU (needs NVIDIA + Container Toolkit).
+  # ASR: GigaAM. Default CPU; GIGAAM_DEVICE=cuda for GPU (needs NVIDIA + Container
+  # Toolkit). Models self-download into the mounted cache on first run — do NOT
+  # pre-copy legacy ONNX files (upstream README).
   quasistreaming-gigam:
     build:
       context: ./stacks/yandex-station/quasistreaming-gigam
@@ -426,7 +426,7 @@ services:
     container_name: v3rt3p-gigam
     restart: unless-stopped
     environment:
-      GIGAAM_DEVICE: "<GIGAAM_DEVICE>"      # cpu | cuda
+      GIGAAM_DEVICE: "${GIGAAM_DEVICE:-cpu}"  # cpu | cuda
       GIGAAM_DOWNLOAD_ROOT: /app/.cache/gigaam
     volumes:
       - /mnt/spool/apps/data/yandex-station/v3rt3p/gigaam-cache:/app/.cache/gigaam
@@ -449,15 +449,17 @@ services:
     container_name: v3rt3p-processor
     restart: unless-stopped
     environment:
-      OPENAI_BASE_URL: ${OPENAI_BASE_URL}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://openrouter.ai/api/v1}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       OPENAI_MODEL: ${OPENAI_MODEL}
-      PROCESSOR_PROMPT_TEMPLATE_PATH: /prompt.handlebars
-      PROCESSOR_STATE_PROMPT_TEMPLATE_PATH: /prompt-state.handlebars
+      PROMPT_TEMPLATE_PATH: /prompt.handlebars
+      STATE_PROMPT_TEMPLATE_PATH: /prompt-state.handlebars
+      FUNCTIONS_PROMPT_TEMPLATE_PATH: /prompt-functions.handlebars
       CACHE_SIZE: "1000"
     volumes:
       - /mnt/spool/apps/config/yandex-station/v3rt3p/prompts/prompt.handlebars:/prompt.handlebars:ro
       - /mnt/spool/apps/config/yandex-station/v3rt3p/prompts/prompt-state.handlebars:/prompt-state.handlebars:ro
+      - /mnt/spool/apps/config/yandex-station/v3rt3p/prompts/prompt-functions.handlebars:/prompt-functions.handlebars:ro
 
   # Optional but required for reset: NTP server (public image).
   ntp-server:
@@ -469,11 +471,12 @@ services:
     environment:
       NTP_SERVERS: time1.google.com,time2.google.com,time.cloudflare.com
 
-  # Liveness only; the real trust check is TLS to quasar.yandex.net.
-healthcheck:  # (applied per-service where the image ships a probe) omitted by default; add per service
+  # Healthchecks omitted by default (upstream images ship no proven probes); add
+  # per service once a readiness signal is evidenced. The real trust check is TLS
+  # to https://quasar.yandex.net on :443.
 ```
 
-- [ ] **Step 2: validate statically**
+- [x] **Step 2: validate statically** (done 2026-11-09: `Validation successful`; only warning is unset `OPENAI_MODEL`, expected without the env file)
 
 ```bash
 cd /home/salekseev/src/github.com/salekseev/stacks
@@ -482,7 +485,7 @@ cd /home/salekseev/src/github.com/salekseev/stacks
 
 Expected: `Validation successful for stacks/yandex-station.yaml`. If `docker-compose` (v1) is missing, run `docker compose -f stacks/yandex-station.yaml config > /dev/null && echo OK`.
 
-- [ ] **Step 3: commit**
+- [x] **Step 3: commit** (done 2026-11-09, commit below on this branch)
 
 ```bash
 cd /home/salekseev/src/github.com/salekseev/stacks
@@ -531,7 +534,7 @@ Expected: no processes on 80/443, or "Ports free" message.
 - [ ] **Step 3: deploy the v3rt3p stack** (first run builds 6 images — allow 5–15 min)
 
 ```bash
-! ssh silverstone 'cd /home/salekseev/src/github.com/salekseev/stacks && docker compose -f stacks/yandex-station.yaml up -d --build'
+! ssh silverstone 'cd /home/salekseev/src/github.com/salekseev/stacks && docker compose -f stacks/yandex-station.yaml --env-file /mnt/spool/apps/config/yandex-station/v3rt3p/.env up -d --build'
 ```
 
 Expected: containers build and start.
@@ -568,17 +571,43 @@ Expected: once the Midi is re-pointed (Task 6), see `/register` and `/token` as 
 
 **[USER SHELL]** — All steps require OPNsense UI or console access (Lanner mini-PC).
 
-- [ ] **Step 1: add Unbound host overrides [USER SHELL]** — Services → Unbound DNS → Overrides → **+**, `Type = A`, `IP = 192.168.1.10`. Add at least the core three, then all remaining names from the vendored `stacks/yandex-station/https-proxy/domains/yandex.txt`:
+- [ ] **Step 1: add Unbound host overrides [USER SHELL]** — Services → Unbound DNS → Overrides → **+**, `Type = A`, `IP = 192.168.1.10`. Full list below — verified 2026-11-09 against the vendored `stacks/yandex-station/https-proxy/domains/yandex.txt` (its first line `quasar:31120` is the proxy's internal upstream marker, not a DNS entry; lines prefixed `!` in that file — `*.s3.yandex.net`, `*.svc.cdn.yandex.net`, `*.strm.yandex.net` — are proxy **exclusions** and must **not** be overridden):
 
-| Host | Domain | IP |
-|---|---|---|
-| `quasar` | `yandex.net` | `192.168.1.10` |
-| `quasar` | `yandex.ru` | `192.168.1.10` |
-| `scbh` | `yandex.net` | `192.168.1.10` |
-| `ntp` | `yantp.net` | `192.168.1.10` |
-| `rpc` | `alice.yandex.net` | `192.168.1.10` |
-| `uniproxy` | `alice.yandex.net` | `192.168.1.10` |
-| … | all other names in `domains/yandex.txt` | `192.168.1.10` |
+| FQDN (A record → `192.168.1.10`) |
+|---|
+| `quasar.yandex.net` |
+| `quasar.yandex.ru` |
+| `scbh.yandex.net` |
+| `ntp.yantp.net` |
+| `rpc.alice.yandex.net` |
+| `uniproxy.alice.yandex.net` |
+| `uniproxy-quic.alice.yandex.net` |
+| `login.yandex.ru` |
+| `oauth.yandex.ru` |
+| `push.yandex.ru` |
+| `clck.yandex.net` |
+| `mobileproxy.passport.yandex.net` |
+| `mobileproxy.yango.com` |
+| `login.yasmina.yango.com` |
+| `oauth.yasmina.yango.com` |
+| `push.yasmina.yango.com` |
+| `quasar.yasmina.yango.com` |
+| `rpc.yasmina.yango.com` |
+| `login.yasmina.funtechservices.com` |
+| `oauth.yasmina.funtechservices.com` |
+| `quasar.yasmina.funtechservices.com` |
+| `clck.yasmina.yango.com` |
+| `report.appmetrica.yandex.net` |
+| `tracking.appmetrica.yandex.net` |
+| `rosenberg.appmetrica.yandex.net` |
+| `zen.report.appmetrica.yandex.net` |
+| `redirect.appmetrica.yandex.com` |
+| `startup.appmetrica.yango.com` |
+| `startup.mobile.yandex.net` |
+| `analytics.mobile.yandex.net` |
+| `certificate.mobile.yandex.net` |
+| `api.lbs.yandex.net` |
+| `ws.api.music.yandex.net` |
 
 Apply, then verify:
 
