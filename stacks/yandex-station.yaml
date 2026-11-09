@@ -21,7 +21,7 @@ services:
   # "<LIST>_UPSTREAM_URL" contract). Full domain set: stacks/yandex-station/https-proxy/domains/yandex.txt
   https-proxy:
     build:
-      context: ./stacks/yandex-station/https-proxy
+      context: ./yandex-station/https-proxy
     container_name: v3rt3p-https-proxy
     restart: unless-stopped
     ports:
@@ -35,7 +35,7 @@ services:
   # Main "maind" protocol server (Quasar backend emulator).
   quasar-server:
     build:
-      context: ./stacks/yandex-station/quasar-server
+      context: ./yandex-station/quasar-server
     container_name: v3rt3p-quasar-server
     restart: unless-stopped
     environment:
@@ -71,7 +71,7 @@ services:
   # offloads to GPU (needs NVIDIA driver + Container Toolkit).
   quasistreaming-gigam:
     build:
-      context: ./stacks/yandex-station/quasistreaming-gigam
+      context: ./yandex-station/quasistreaming-gigam
       dockerfile: "${GIGAAM_DOCKERFILE:-Dockerfile.cpu}"
     container_name: v3rt3p-gigam
     restart: unless-stopped
@@ -84,7 +84,7 @@ services:
   # TTS: self-hosted OpenAI-compatible service (Supertonic assets mounted RO).
   supertonic-tts:
     build:
-      context: ./stacks/yandex-station/supertonic-tts
+      context: ./yandex-station/supertonic-tts
     container_name: v3rt3p-tts
     restart: unless-stopped
     environment:
@@ -97,7 +97,7 @@ services:
   # on the template paths).
   processor:
     build:
-      context: ./stacks/yandex-station/processor
+      context: ./yandex-station/processor
     container_name: v3rt3p-processor
     restart: unless-stopped
     environment:
