@@ -20,7 +20,7 @@
       "matchDatasources": [
         "docker"
       ],
-      "matchCurrentValue": "/^(latest|plexpass)$/i",
+      "matchCurrentValue": "/^(latest|plexpass|nvidia)$/i",
       "pinDigests": true
     },
     {
