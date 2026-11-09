@@ -81,7 +81,8 @@ Yandex Station Midi (192.168.1.<MIDI>)
   │ HTTPS (:443) to quasar.yandex.net … scbh.yandex.net … (the https-proxy domain set)
   │ NTP (:123/udp) to ntp.yantp.net  (required to reset / keep clock)
   ▼
- OPNsense / Unbound host-overrides  ──►  192.168.1.10 :80 / :443  (+ ntp.yantp.net → :123/udp)
+ OPNsense DHCP: this Midi's DNS = 192.168.1.10
+ silverstone dnsmasq :53  +  https-proxy :80/:443  +  ntp :123/udp
   │
   ├── Phase 1  lite-kit stand (TEMPORARY)  :53 / :80 / :443
   │      /get_sync_info → adbd.remoteActivation=true  →  speaker opens tcp/5555
@@ -158,23 +159,24 @@ Two trust mechanisms, one per phase:
 ### 5.6 Isolation tier & security
 
 - **Domain scope:** the `https-proxy` intercepts every domain in its `domains/yandex.txt` (e.g. `quasar.yandex.net/.ru`, `scbh.yandex.net`, `rpc.alice.yandex.net`, `uniproxy.alice.yandex.net`, `certificate.mobile.yandex.net`, `login`/`oauth.yandex.ru`, `clck.yandex.net`, telemetry/appmetrica hosts, `ws.api.music.yandex.net`) — so Tier 1 here is **broader** than the old minimal three-domain redirect, and telemetry domains that used to leak are now intercepted. Wildcard CDN/music-stream hosts (`*.s3`, `*.svc.cdn`, `*.strm`) are passed through unchanged.
-- **Source-scoped firewall:** a LAN-side `allow <MIDI_IP> → 192.168.1.10 ports 80,443,123/udp` rule; keep the default LAN→LAN allow intact.
+- **Source-scoped firewall:** on the LAN interface, above the default LAN allow, in order: pass the Midi to `192.168.1.10` TCP `53,80,443` and UDP `53,123`; then reject the rest of the LAN net to that same destination and those ports. A pass with the default allow left above it does not constrain anyone.
 - **Passwordless SSH is a hazard:** Dropbear starts with `-B` (root has an **empty password**, visible to the whole LAN). Mitigations: a firewall rule restricting `:2222`/`:5555` to trusted sources, and never port-forwarding them. Optional later hardening: `/root/.ssh/authorized_keys` + remove `-B`.
 - **Do not expose `:80/:443/:123/udp` to the WAN.** Keep the Midi off any guest/external network.
 - **Compromised-CA hygiene (§11):** do not reuse the eMudhra approach for any device outside this one; keep the proxy local; rotate/lock the key-log dir if TLS key-logging is enabled.
 
 ---
 
-## 6. Routing via OPNsense (design)
+## 6. Routing
 
-The station resolves its Yandex domains (and NTP) through OPNsense **Unbound** → `silverstone`:
+OPNsense Unbound host overrides are server-wide. Pointing the Midi's DHCP DNS server at OPNsense does not create a split view, so those overrides would also capture `login.yandex.ru`, `oauth.yandex.ru`, and `ws.api.music.yandex.net` for every other client. This design does not add them.
 
-- **Host overrides (A-only), IP `192.168.1.10`** — cover the full `https-proxy` domain set, not just three. The core ones to add are `quasar`/`yandex.net`, `quasar`/`yandex.ru`, `scbh`/`yandex.net`, but **all** names listed in the vendored `domains/yandex.txt` (and `rpc.alice`, `uniproxy.alice`, `certificate.mobile`, etc.) should be redirected so activation and dialogue actually work. A tool to expand `domains/yandex.txt` into per-host A overrides is preferred over hand-typing them.
-- **`ntp.yantp.net` → `192.168.1.10` (A-only)** — **required**: the station cannot be reset or kept on time without it, and reset is required before the backend is usable.
-- **A-only, no AAAA** — a stray IPv6 record would let the station escape to real Yandex over IPv6.
-- **DHCP reservation** for the Midi → DNS server = OPNsense LAN IP. Scope it to the **Midi only**, not a network-wide switch (network-wide redirection can break the setup phone's Yandex requests).
-- **NTP:** the `ntp-server` service binds `udp/123` on silverstone; the firewall rule permits it from the Midi.
-- **Full detach (Tier 2, optional, future):** also block egress to real Yandex IPs (already largely unnecessary since the proxy passes unknown hosts straight through) — documented as a known limitation of Tier 1 telemetry if any non-proxied Yandex host is still contacted.
+The Midi DHCP reservation sets DNS to `192.168.1.10` only. Every other lease keeps OPNsense. silverstone runs dnsmasq bound to `192.168.1.10:53`. It answers the hijack list with `192.168.1.10`, forwards every other name to the host's default gateway, and sets `filter-AAAA`. The hijack list is every non-`!` name in `domains/yandex.txt` except the upstream directive `quasar:31120`, plus `ntp.yantp.net`. The `!` CDN wildcards stay public answers.
+
+lite-kit owns `:53` during the unlock and is stopped before dnsmasq starts. The button reset runs only after that reservation exists and lite-kit is answering `:53`. App onboarding runs only after dnsmasq and `ntp-server` are up. `ntp.yantp.net` is required for that onboarding.
+
+`stacks/yandex-station.yaml` does not yet contain the dnsmasq service. Task 6 starts it on `192.168.1.10:53` from `4km3/dnsmasq:2.90-r3` with the hijack list, after lite-kit has released the port.
+
+Firewall order is the four rules in §5.6. No WAN forward of `53`, `80`, `443`, `123`, `2222`, or `5555`.
 
 ---
 
@@ -209,7 +211,7 @@ The station resolves its Yandex domains (and NTP) through OPNsense **Unbound** �
 
 ## 9. Rollback
 
-- **OPNsense:** delete the Unbound host overrides (all proxied domains + `ntp.yantp.net`) and the DHCP reservation; restore normal DNS. Non-destructive.
+- **OPNsense:** delete the four LAN rules and clear DNS `192.168.1.10` on the Midi reservation. Unbound was not given Yandex overrides.
 - **silverstone:** `docker compose -f stacks/yandex-station.yaml down` (keep the git branch to revert). Stop lite-kit.
 - **Midi:** a factory reset wipes `/data` and cannot revert the firmware version. If a build cannot be brought under control, the reset path is the only documented escape and is irreversible at the firmware layer.
 - **Leak:** never publish `/data/quasar/devices.json`, device keys, MAC, serial, or Wi-Fi password — these are read from the device once rooted. Also do not leak the vendored `domains/yandex.txt` or the proxy config to untrusted parties.
