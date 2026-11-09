@@ -645,7 +645,7 @@ Expected: `uid=0(root)` (Phase 1 lock-in survived).
 
 - [ ] **Step 2: optional SSH hardening** — add `/root/.ssh/authorized_keys` on the Midi and drop the Dropbear `-B` flag so root login is key-only (see spec §5.6).
 
-- [ ] **Step 3: note the remaining follow-ups** from the spec (§10): GigaAM on CUDA, `processor` function/state/MCP servers and home-functions, full cloud detach (Tier 2), the pending upstream v3rt3p/https-proxy#3 (`SSL_KEYLOG` build ARG — if merged, bump the submodule pin so images retag), and the `supertonic-tts` LICENSE issue.
+- [ ] **Step 3: note the remaining follow-ups** from the spec (§10): GigaAM on CUDA, `processor` function/state/MCP servers and home-functions, full cloud detach (Tier 2), the pending upstream v3rt3p/https-proxy#3 (`SSL_KEYLOG` build ARG — if merged, bump the submodule pin so images retag), and the `supertonic-tts` attribution issue (MIT `helper.js` copied without notice; weights are OpenRAIL and pulled from HF by the deployer, not shipped in images).
 
 ---
 
