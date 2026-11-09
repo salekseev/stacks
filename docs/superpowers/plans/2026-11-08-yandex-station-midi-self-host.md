@@ -371,7 +371,7 @@ services:
   # Public entry: NGINX on :80/:443, eMudhra CA, per-domain certs at runtime.
   https-proxy:
     build:
-      context: ./stacks/yandex-station/https-proxy
+      context: ./yandex-station/https-proxy
     container_name: v3rt3p-https-proxy
     restart: unless-stopped
     ports:
@@ -385,7 +385,7 @@ services:
   # Main "maind" protocol server.
   quasar-server:
     build:
-      context: ./stacks/yandex-station/quasar-server
+      context: ./yandex-station/quasar-server
     container_name: v3rt3p-quasar-server
     restart: unless-stopped
     environment:
@@ -421,7 +421,7 @@ services:
   # pre-copy legacy ONNX files (upstream README).
   quasistreaming-gigam:
     build:
-      context: ./stacks/yandex-station/quasistreaming-gigam
+      context: ./yandex-station/quasistreaming-gigam
       dockerfile: "${GIGAAM_DOCKERFILE:-Dockerfile.cpu}"
     container_name: v3rt3p-gigam
     restart: unless-stopped
@@ -434,7 +434,7 @@ services:
   # TTS: self-hosted OpenAI-compatible service (model assets mounted RO).
   supertonic-tts:
     build:
-      context: ./stacks/yandex-station/supertonic-tts
+      context: ./yandex-station/supertonic-tts
     container_name: v3rt3p-tts
     restart: unless-stopped
     environment:
@@ -445,7 +445,7 @@ services:
   # Brain: builds prompts, calls the cloud OpenAI-compatible LLM.
   processor:
     build:
-      context: ./stacks/yandex-station/processor
+      context: ./yandex-station/processor
     container_name: v3rt3p-processor
     restart: unless-stopped
     environment:
