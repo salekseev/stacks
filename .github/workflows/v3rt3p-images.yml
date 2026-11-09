@@ -1,6 +1,7 @@
 # Builds the v3rt3p backend images from the vendored submodules and publishes
-# them as PUBLIC ghcr.io packages (the CA key bundled by https-proxy is the
-# all-zero public placeholder — see spec §5.5 — so no image contains secrets).
+# them as PUBLIC ghcr.io packages. The CA key bundled by https-proxy matches
+# the bundled EM EV TLS CA - G3C certificate; its scalar is 56 (see spec §5.5),
+# so the image does not contain a private secret beyond that public community key.
 #
 # Tag contract: each image is tagged with the SHORT SHA (7) of its submodule
 # pin — the tag is derived, never hand-written. stacks/yandex-station.yaml
