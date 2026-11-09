@@ -42,7 +42,7 @@ services:
     container_name: scrypted
     restart: unless-stopped
     networks:
-      lan-ipvlan:
+      lan-macvlan:
         ipv4_address: 192.168.1.8
 
     # logging is noisy and will unnecessarily wear on flash storage.
@@ -65,15 +65,15 @@ services:
 
 
 networks:
-  lan-ipvlan:
+  lan-macvlan:
     # Shared with go2rtc.yaml -- keep both definitions identical. Docker allows
     # only one network per subnet, so every LAN-IP container joins this one.
-    name: lan-ipvlan
-    driver: ipvlan
+    name: lan-macvlan
+    driver: macvlan
     driver_opts:
         # SR-IOV VF (not the PF) so the host can reach these containers.
         parent: ens1f0v1
-        ipvlan_mode: l2
+        macvlan_mode: bridge
     ipam:
         config:
             - subnet: 192.168.1.0/24
