@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Steps marked **[USER SHELL]** must be run by the user (they touch the physical Midi or silverstone).
 
-**Goal:** Customize a **Yandex Station Midi** (`cucumber`) so it runs a self-hosted backend instead of Yandex cloud. Pipeline = **(A)** one-time root ADB via DNS unlock, then **(B)** a persistent **v3rt3p** backend on `silverstone` (with the eMudhra `https-proxy`), with OPNsense (Lanner) Unbound routing the station's Yandex domains — and `ntp.yantp.net` — to `silverstone`.
+**Goal:** Customize a **Yandex Station Midi** (`cucumber`) so it runs a self-hosted backend instead of Yandex cloud. Pipeline = **(A)** one-time root ADB via DNS unlock, then **(B)** a persistent **v3rt3p** backend on `silverstone` (with the eMudhra `https-proxy`). Only the Midi uses silverstone (`192.168.1.10`) as its DNS resolver; OPNsense Unbound is left unchanged. `ntp.yantp.net` resolves there too.
 
 **Architecture:** Phase 0 firmware gate (factory reset + ADB verification) → Phase 1 lock-in (root markers, OTA disable, SSH) + lite-kit stand (temporary DNS/HTTPS proxy) → Phase 2 v3rt3p stack (persistent, eMudhra trust) + OPNsense routing.
 
-**Tech Stack:** Docker Compose, v3rt3p stack (`https-proxy` eMudhra CA, `quasar-server`, `processor` cloud LLM, `quasistreaming-gigam` ASR, `supertonic-tts` TTS, `postgres`, optional `ntp-server`), `krevetkqqq/lite-kit` (Phase 1), OPNsense Unbound, ADB, SSH/Dropbear.
+**Tech Stack:** Docker Compose, v3rt3p stack (`https-proxy` eMudhra CA, `quasar-server`, `processor` cloud LLM, `quasistreaming-gigam` ASR, `supertonic-tts` TTS, `postgres`, optional `ntp-server`), `4km3/dnsmasq:2.90-r3` for the Midi only, `krevetkqqq/lite-kit` (Phase 1), OPNsense DHCP and firewall, ADB, SSH/Dropbear.
 
 **Spec:** `docs/superpowers/specs/2026-11-08-yandex-station-midi-self-host-design.md`
 
@@ -50,13 +50,13 @@ Placeholder values to fill on the device and record:
 | `/mnt/spool/apps/config/yandex-station/v3rt3p/prompts/` (host, silverstone, RO) | `processor` handlebars templates | Staged in Task 3 |
 | `/mnt/spool/apps/data/yandex-station/v3rt3p/` (host, silverstone) | Postgres data + GigaAM cache | Created in Task 3 |
 | `~/lite-kit/` (host, silverstone) | Phase 1 unlock + OTA-downgrade stand | Created/staged in Task 2, removed in Task 5 |
-| OPNsense (Lanner) | Unbound overrides (all proxied domains + ntp.yantp.net) + DHCP reservation + firewall | **[USER SHELL]** in Task 6 |
+| OPNsense (Lanner) | Midi DHCP reservation (DNS = `192.168.1.10` only) + four firewall rules. No Unbound Yandex overrides. | **[USER SHELL]** in Task 6 |
 
 ---
 
 ## Task 0 (PHASE 0): Factory reset + validation — **the gating step**
 
-**Do this before anything else.** Whole plan's feasibility depends on what firmware the reset produces. A factory reset wipes `/data` and cannot revert the firmware version.
+**Repo-side Tasks 1–4 are already done on this branch.** The button reset is the device gate, and it runs only after Task 4's lite-kit is answering `192.168.1.10:53` and the Task 6 reservation already sets this Midi's DNS server to `192.168.1.10`. Resetting first leaves the speaker on ordinary DNS, so root ADB does not appear. A factory reset wipes `/data` and cannot revert the firmware version. lite-kit's default mode does not downgrade; this plan does not create `run/downgrade`. If ADB is absent after the reset, stop.
 
 **Reset (Midi / `cucumber`):**
 1. Unplug the power cable.
@@ -573,11 +573,11 @@ Expected: once the Midi is re-pointed (Task 6), see `/register` and `/token` as 
 
 ## Task 6 (PHASE 2 + OPNsense): Wire the DNS routing
 
-**Why:** the Midi must resolve `quasar.yandex.net` etc. (and `ntp.yantp.net`) to silverstone for impersonation to work. OPNsense Unbound + DHCP reservation + firewall scoping.
+**Why:** the Midi must resolve the hijack list and `ntp.yantp.net` to silverstone. OPNsense Unbound stays unchanged. Only this Midi's DHCP DNS server is `192.168.1.10`, where dnsmasq answers. Do this reservation before the Task 0 button reset, while lite-kit is stopped; start lite-kit for the reset; after Task 5, stop lite-kit and start dnsmasq on the same address.
 
-**[USER SHELL]** — All steps require OPNsense UI or console access (Lanner mini-PC).
+**[USER SHELL]** — Reservation and firewall are OPNsense UI steps. dnsmasq runs on silverstone.
 
-- [ ] **Step 1: add Unbound host overrides [USER SHELL]** — Services → Unbound DNS → Overrides → **+**, `Type = A`, `IP = 192.168.1.10`. Full list below — verified 2026-11-09 against the vendored `stacks/yandex-station/https-proxy/domains/yandex.txt` (its first line `quasar:31120` is the proxy's internal upstream marker, not a DNS entry; lines prefixed `!` in that file — `*.s3.yandex.net`, `*.svc.cdn.yandex.net`, `*.strm.yandex.net` — are proxy **exclusions** and must **not** be overridden):
+- [ ] **Step 1: start dnsmasq on silverstone after lite-kit has released port 53.** The names below were verified 2026-11-09 against `stacks/yandex-station/https-proxy/domains/yandex.txt`. `quasar:31120` is the proxy's upstream directive and is not a DNS name. `!` lines (`*.s3.yandex.net`, `*.svc.cdn.yandex.net`, `*.strm.yandex.net`) are exclusions and are not hijacked. Write one `address=/<fqdn>/192.168.1.10` line per FQDN in this table, plus `filter-AAAA` and `server=<silverstone default gateway>`:
 
 | FQDN (A record → `192.168.1.10`) |
 |---|
@@ -615,17 +615,21 @@ Expected: once the Midi is re-pointed (Task 6), see `/register` and `/token` as 
 | `api.lbs.yandex.net` |
 | `ws.api.music.yandex.net` |
 
-Apply, then verify:
+Verify from the workstation:
 
 ```bash
-! ssh silverstone 'configctl unbound check && drill @127.0.0.1 quasar.yandex.net A && drill @127.0.0.1 ntp.yantp.net A'
+dig @192.168.1.10 quasar.yandex.net A +short
+dig @192.168.1.10 quasar.yandex.net AAAA +short
+dig @192.168.1.10 ntp.yantp.net A +short
+GW=$(ssh silverstone 'ip -4 route show default | awk "{print \$3; exit}"')
+dig @"${GW}" quasar.yandex.net A +short
 ```
 
-Expected: all queries return `192.168.1.10` (A-only, no AAAA). (If an override drops silently, add the base domain to Private Domains.)
+Expected: the first and third commands print `192.168.1.10`. The AAAA command prints no address. The gateway query prints a public address, or prints nothing. `192.168.1.10` from the gateway query means an Unbound override was added; remove it.
 
-- [ ] **Step 2: DHCP reservation for the Midi (OPNsense UI)** — **Services → DHCPv4 → [Interface_LAN] → Reservations → +**: MAC `<MIDI_MAC>`, IP `<MIDI_IP>`, hostname `yandex-midi` (optional), **Set DNS servers = checked, OPNsense LAN IP**. Save, apply. Scope it to the Midi only, not network-wide.
+- [ ] **Step 2: DHCP reservation for the Midi (OPNsense UI), before the Task 0 reset** — **Services → DHCPv4 → LAN → Reservations → +**: MAC `<MIDI_MAC>`, IP `<MIDI_IP>`, hostname `yandex-midi` (optional). DNS servers for this reservation only: `192.168.1.10`. Leave the LAN-wide DNS server on OPNsense. Save, apply.
 
-- [ ] **Step 3: firewall rule — restrict `:80/:443/udp/123` source to `<MIDI_IP>`** (best practice; keeps the impersonation backend + NTP off other LAN hosts). **Firewall → Rules → LAN → +**: Pass / in / LAN / Source `<MIDI_IP>` / Destination `192.168.1.10` / Destination port `80,443,123/udp`, inserted above the default `Pass LAN to any` rule. Keep the default LAN→LAN allow intact.
+- [ ] **Step 3: firewall rules** — **Firewall → Rules → LAN**, above the default LAN allow, in this order: pass source `<MIDI_IP>` to `192.168.1.10` TCP `53,80,443`; pass source `<MIDI_IP>` to `192.168.1.10` UDP `53,123`; reject source LAN net to `192.168.1.10` TCP `53,80,443`; reject source LAN net to `192.168.1.10` UDP `53,123`. Apply. No WAN forward of `53`, `80`, `443`, `123`, `2222`, or `5555`.
 
 - [ ] **Step 4: end-to-end — reset the Midi via the app and ask it a question**
 
@@ -641,7 +645,7 @@ Expected: `uid=0(root)` (Phase 1 lock-in survived).
 
 ## Task 7: Post-deploy cleanup & recording
 
-- [ ] **Step 1: record the verified layout** — `<MIDI_IP>`, firmware `<FIRMWARE_BUILD>`, `<GIGAAM_DEVICE>`, `<TTS_VOICE>`, the exact Unbound overrides (all proxied domains + `ntp.yantp.net`), and the firewall rule, into a notes file under `/mnt/spool/apps/config/yandex-station/`.
+- [ ] **Step 1: record the verified layout** — `<MIDI_IP>`, firmware `<FIRMWARE_BUILD>`, `<GIGAAM_DEVICE>`, `<TTS_VOICE>`, the dnsmasq hijack list, and the four firewall rules, into a notes file under `/mnt/spool/apps/config/yandex-station/`.
 
 - [ ] **Step 2: optional SSH hardening** — add `/root/.ssh/authorized_keys` on the Midi and drop the Dropbear `-B` flag so root login is key-only (see spec §5.6).
 
@@ -651,7 +655,7 @@ Expected: `uid=0(root)` (Phase 1 lock-in survived).
 
 ## Rollback
 
-- **OPNsense:** delete the Unbound overrides (all proxied domains + `ntp.yantp.net`) + DHCP reservation; restore DNS. Non-destructive.
-- **silverstone:** `docker compose -f stacks/yandex-station.yaml down` (keep the branch to revert). Stop lite-kit.
+- **OPNsense:** delete the four LAN rules and remove DNS `192.168.1.10` from the Midi reservation. Unbound was not given Yandex overrides.
+- **silverstone:** `docker compose -f stacks/yandex-station.yaml down` (keep the branch to revert). Stop lite-kit and the dnsmasq container.
 - **Midi:** a factory reset wipes `/data` and cannot revert firmware. If a build cannot be brought under control, the reset path is the only documented escape and is irreversible at the firmware layer.
 - **Leak:** never publish `/data/quasar/devices.json`, device keys, MAC, serial, or Wi-Fi password.
