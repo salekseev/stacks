@@ -222,6 +222,7 @@ The station resolves its Yandex domains (and NTP) through OPNsense **Unbound** �
 - `processor` **function/state/MCP servers** and `services/home-functions` (home automation) — the stack's extension surface.
 - Full cloud detach (Tier 2: egress block).
 - Optional SSH hardening (key-only, drop `-B`).
+- Upstream contribution submitted (2026-11-09): v3rt3p/https-proxy issue #2 + PR #3 — optional sslkeylog Nginx patch at build time via `ARG SSL_KEYLOG` (tested locally: `SSL_KEYLOG=false` builds in ~2 s with a byte-identical distro binary; steady-state deployments then ride distro CVE updates). If merged: bump the submodule pin and the ghcr images retag per the SHA-tag contract. Also queued: upstream issue on `v3rt3p/supertonic-tts` for the missing LICENSE file.
 
 ---
 
