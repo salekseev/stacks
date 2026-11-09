@@ -20,6 +20,10 @@ services:
   # YANDEX_UPSTREAM_URL overrides the first line of domains/yandex.txt (generate.sh
   # "<LIST>_UPSTREAM_URL" contract). Full domain set: stacks/yandex-station/https-proxy/domains/yandex.txt
   https-proxy:
+    # image tag == short SHA of the submodule pin (built+pushed public by
+    # .github/workflows/v3rt3p-images.yml); bump both together. `up -d` pulls;
+    # `up -d --build` rebuilds from the vendored submodule (air-gap fallback).
+    image: ghcr.io/salekseev/v3rt3p-https-proxy:b4dc462
     build:
       context: ./yandex-station/https-proxy
     container_name: v3rt3p-https-proxy
@@ -34,6 +38,7 @@ services:
 
   # Main "maind" protocol server (Quasar backend emulator).
   quasar-server:
+    image: ghcr.io/salekseev/v3rt3p-quasar-server:fefcd58
     build:
       context: ./yandex-station/quasar-server
     container_name: v3rt3p-quasar-server
@@ -70,6 +75,7 @@ services:
   # pre-copy legacy ONNX files — upstream README). Default CPU; GIGAAM_DEVICE=cuda
   # offloads to GPU (needs NVIDIA driver + Container Toolkit).
   quasistreaming-gigam:
+    image: ghcr.io/salekseev/v3rt3p-quasistreaming-gigam:e1770f1   # CPU variant
     build:
       context: ./yandex-station/quasistreaming-gigam
       dockerfile: "${GIGAAM_DOCKERFILE:-Dockerfile.cpu}"
@@ -83,6 +89,7 @@ services:
 
   # TTS: self-hosted OpenAI-compatible service (Supertonic assets mounted RO).
   supertonic-tts:
+    image: ghcr.io/salekseev/v3rt3p-supertonic-tts:d0a6449
     build:
       context: ./yandex-station/supertonic-tts
     container_name: v3rt3p-tts
@@ -96,6 +103,7 @@ services:
   # Template env names are per processor/src/environment.ts (no PROCESSOR_ prefix
   # on the template paths).
   processor:
+    image: ghcr.io/salekseev/v3rt3p-processor:6129628
     build:
       context: ./yandex-station/processor
     container_name: v3rt3p-processor
