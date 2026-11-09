@@ -1,0 +1,129 @@
+# $schema: https://raw.githubusercontent.com/compose-spec/compose-spec/refs/heads/main/schema/compose-spec.json
+#
+# Yandex Station self-hosted backend (v3rt3p). Impersonates Yandex cloud so the
+# rooted Midi resolves quasar.yandex.net/.ru, scbh.yandex.net, ntp.yantp.net, etc.
+# to silverstone:80/:443 (+ udp/123 NTP). Trust is via the eMudhra intermediate CA
+# shipped by https-proxy (the station trusts it out of the box — see spec §5.5).
+# LAN-only exposure: OPNsense firewall scopes :80/:443/udp/123 to the Midi IP.
+#
+# Secrets are interpolated from the host env file at deploy time:
+#   docker compose -f stacks/yandex-station.yaml --env-file \
+#     /mnt/spool/apps/config/yandex-station/v3rt3p/.env up -d --build
+# (compose does NOT auto-read the config-dir .env; the flag is required).
+#
+# Build contexts are vendored git submodules under stacks/yandex-station/.
+# Design: docs/superpowers/specs/2026-11-08-yandex-station-midi-self-host-design.md
+# Plan:   docs/superpowers/plans/2026-11-08-yandex-station-midi-self-host.md
+
+services:
+  # Public entry: NGINX on :80/:443, eMudhra CA, per-domain P-384 certs at runtime.
+  # YANDEX_UPSTREAM_URL overrides the first line of domains/yandex.txt (generate.sh
+  # "<LIST>_UPSTREAM_URL" contract). Full domain set: stacks/yandex-station/https-proxy/domains/yandex.txt
+  https-proxy:
+    build:
+      context: ./stacks/yandex-station/https-proxy
+    container_name: v3rt3p-https-proxy
+    restart: unless-stopped
+    ports:
+      - "192.168.1.10:80:80"    # host-IP binding per plex.yaml/scrypted.yaml precedent
+      - "192.168.1.10:443:443"
+    environment:
+      YANDEX_UPSTREAM_URL: http://quasar-server:31115
+    depends_on:
+      - quasar-server
+
+  # Main "maind" protocol server (Quasar backend emulator).
+  quasar-server:
+    build:
+      context: ./stacks/yandex-station/quasar-server
+    container_name: v3rt3p-quasar-server
+    restart: unless-stopped
+    environment:
+      ALLOW_UPDATES: "true"
+      PORT: "31115"
+      API_PORT: "31116"
+      TTS_OPENAI_BASE_URL: http://supertonic-tts:9150
+      TTS_OPENAI_VOICE: "${TTS_VOICE:-F1}"          # supertonic voices: M1–M5, F1–F5
+      PROCESSOR_BASIC_URL: http://processor:8080    # base URL; processor appends its route
+      STT_GIGAAM_URL: ws://quasistreaming-gigam:8080
+      POSTGRES_URL: postgres://quasar:${POSTGRES_PASSWORD:-change-me}@postgres:5432/quasar
+    ports:
+      - "192.168.1.10:31116:31116"   # external API port for controlling the speakers
+    depends_on:
+      - postgres
+      - processor
+      - quasistreaming-gigam
+      - supertonic-tts
+
+  postgres:
+    image: postgres:17
+    container_name: v3rt3p-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: quasar
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: quasar
+    volumes:
+      - /mnt/spool/apps/data/yandex-station/v3rt3p/postgres-data:/var/lib/postgresql/data
+
+  # ASR: GigaAM. Models self-download into the persistent cache below (do NOT
+  # pre-copy legacy ONNX files — upstream README). Default CPU; GIGAAM_DEVICE=cuda
+  # offloads to GPU (needs NVIDIA driver + Container Toolkit).
+  quasistreaming-gigam:
+    build:
+      context: ./stacks/yandex-station/quasistreaming-gigam
+      dockerfile: "${GIGAAM_DOCKERFILE:-Dockerfile.cpu}"
+    container_name: v3rt3p-gigam
+    restart: unless-stopped
+    environment:
+      GIGAAM_DEVICE: "${GIGAAM_DEVICE:-cpu}"        # cpu | cuda
+      GIGAAM_DOWNLOAD_ROOT: /app/.cache/gigaam
+    volumes:
+      - /mnt/spool/apps/data/yandex-station/v3rt3p/gigaam-cache:/app/.cache/gigaam
+
+  # TTS: self-hosted OpenAI-compatible service (Supertonic assets mounted RO).
+  supertonic-tts:
+    build:
+      context: ./stacks/yandex-station/supertonic-tts
+    container_name: v3rt3p-tts
+    restart: unless-stopped
+    environment:
+      ASSETS_PATH: /assets      # image default is /app/assets; assets = unzipped supertonic-tts-model.zip
+    volumes:
+      - /mnt/spool/apps/config/yandex-station/v3rt3p/supertonic-tts-assets:/assets:ro
+
+  # Brain: builds prompts, calls the cloud OpenAI-compatible LLM.
+  # Template env names are per processor/src/environment.ts (no PROCESSOR_ prefix
+  # on the template paths).
+  processor:
+    build:
+      context: ./stacks/yandex-station/processor
+    container_name: v3rt3p-processor
+    restart: unless-stopped
+    environment:
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://openrouter.ai/api/v1}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL}
+      PROMPT_TEMPLATE_PATH: /prompt.handlebars
+      STATE_PROMPT_TEMPLATE_PATH: /prompt-state.handlebars
+      FUNCTIONS_PROMPT_TEMPLATE_PATH: /prompt-functions.handlebars
+      CACHE_SIZE: "1000"
+    volumes:
+      - /mnt/spool/apps/config/yandex-station/v3rt3p/prompts/prompt.handlebars:/prompt.handlebars:ro
+      - /mnt/spool/apps/config/yandex-station/v3rt3p/prompts/prompt-state.handlebars:/prompt-state.handlebars:ro
+      - /mnt/spool/apps/config/yandex-station/v3rt3p/prompts/prompt-functions.handlebars:/prompt-functions.handlebars:ro
+
+  # Optional but required for reset: NTP server (public image).
+  # ntp.yantp.net must resolve here (A-only, no AAAA) — OPNsense override.
+  ntp-server:
+    image: cturra/ntp:latest
+    container_name: v3rt3p-ntp
+    restart: unless-stopped
+    ports:
+      - "192.168.1.10:123:123/udp"
+    environment:
+      NTP_SERVERS: time1.google.com,time2.google.com,time.cloudflare.com
+
+  # Healthchecks omitted by default (upstream images ship no proven probes for
+  # these builds); add per service once a readiness signal is evidenced — the
+  # real trust check is TLS to https://quasar.yandex.net on :443.
