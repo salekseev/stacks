@@ -14,7 +14,7 @@ services:
              count: 1
              capabilities: [gpu]
     networks:
-      go2rtc-ipvlan:
+      lan-ipvlan:
         ipv4_address: 192.168.1.9
     ports:
       - 1984/tcp
@@ -24,13 +24,17 @@ services:
       - 8555/udp
 
 networks:
-  go2rtc-ipvlan:
+  lan-ipvlan:
+    # Shared with scrypted.yaml -- keep both definitions identical. Docker allows
+    # only one network per subnet, so every LAN-IP container joins this one.
+    name: lan-ipvlan
     driver: ipvlan
     driver_opts:
-        parent: enp4s0f0np0
+        # SR-IOV VF (not the PF) so the host can reach these containers.
+        parent: ens1f0v1
         ipvlan_mode: l2
     ipam:
         config:
             - subnet: 192.168.1.0/24
               gateway: 192.168.1.1
-              ip_range: 192.168.1.9/32
+              ip_range: 192.168.1.8/31

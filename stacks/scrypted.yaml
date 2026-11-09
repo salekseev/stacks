@@ -1,14 +1,8 @@
 services:
   scrypted:
     environment:
-      - SCRYPTED_WEBHOOK_UPDATE_AUTHORIZATION=Bearer ${WATCHTOWER_HTTP_API_TOKEN:-env_missing_fallback}
-      - SCRYPTED_WEBHOOK_UPDATE=http://localhost:10444/v1/update
-
-      # Avahi can be used for network discovery by passing in the host daemon
-      # or running the daemon inside the container. Choose one or the other.
-      # Uncomment next line to run avahi-daemon inside the container.
-      # See volumes and security_opt section below to use the host daemon.
-      # - SCRYPTED_DOCKER_AVAHI=true
+      # TrueNAS 26 ships no host avahi-daemon, so run avahi inside the container.
+      - SCRYPTED_DOCKER_AVAHI=true
 
     # NVIDIA (Part 1 of 2)
     runtime: nvidia
@@ -18,23 +12,10 @@ services:
     #image: ghcr.io/koush/scrypted
 
     volumes:
-      # Uncomment the following lines to use Avahi daemon from the host.
-      # Ensure Avahi is running on the host machine:
-      # It can be installed with: sudo apt-get install avahi-daemon
-      # This is not compatible with running avahi inside the container (see above).
-      # Also, uncomment the lines under security_opt
-      - /var/run/dbus:/var/run/dbus
-      - /var/run/avahi-daemon/socket:/var/run/avahi-daemon/socket
-
       # Default volume for the Scrypted database. Typically should not be changed.
       # The volume will be placed relative to this docker-compose.yml.
       - /mnt/spool/apps/config/scrypted:/server/volume
 
-
-    # Uncomment the following lines to use Avahi daemon from the host
-    # Without this, AppArmor will block the container's attempt to talk to Avahi via dbus
-    security_opt:
-      - apparmor:unconfined
     devices: [
       # uncomment the common systems devices to pass
       # them through to docker.
@@ -60,7 +41,9 @@ services:
 
     container_name: scrypted
     restart: unless-stopped
-    network_mode: host
+    networks:
+      lan-ipvlan:
+        ipv4_address: 192.168.1.8
 
     # logging is noisy and will unnecessarily wear on flash storage.
     # scrypted has per device in memory logging that is preferred.
@@ -71,8 +54,6 @@ services:
       # options:
       #     max-size: "10m"
       #     max-file: "10"
-    labels:
-      - "com.centurylinklabs.watchtower.scope=scrypted"
 
     deploy:
       resources:
@@ -83,23 +64,18 @@ services:
               capabilities: [gpu]
 
 
-  # watchtower manages updates for Scrypted.
-  watchtower:
-      environment:
-        - WATCHTOWER_HTTP_API_TOKEN=${WATCHTOWER_HTTP_API_TOKEN:-env_missing_fallback}
-        - WATCHTOWER_HTTP_API_UPDATE=true
-        - WATCHTOWER_SCOPE=scrypted
-        - WATCHTOWER_HTTP_API_PERIODIC_POLLS=${WATCHTOWER_HTTP_API_PERIODIC_POLLS:-true}
-      image: containrrr/watchtower
-      container_name: scrypted-watchtower
-      restart: unless-stopped
-      volumes:
-        - /var/run/docker.sock:/var/run/docker.sock
-      labels:
-        - "com.centurylinklabs.watchtower.scope=scrypted"
-      ports:
-        # The auto update port 10444 can be configured
-        # Must match the port in the auto update url above.
-        - 10444:8080
-      # check for updates once an hour (interval is in seconds)
-      command: --interval 3600 --cleanup --scope scrypted
+networks:
+  lan-ipvlan:
+    # Shared with go2rtc.yaml -- keep both definitions identical. Docker allows
+    # only one network per subnet, so every LAN-IP container joins this one.
+    name: lan-ipvlan
+    driver: ipvlan
+    driver_opts:
+        # SR-IOV VF (not the PF) so the host can reach these containers.
+        parent: ens1f0v1
+        ipvlan_mode: l2
+    ipam:
+        config:
+            - subnet: 192.168.1.0/24
+              gateway: 192.168.1.1
+              ip_range: 192.168.1.8/31
