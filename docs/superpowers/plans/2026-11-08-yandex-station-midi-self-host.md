@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-11-08-yandex-station-midi-self-host-design.md`
 
-**Status:** repo-side steps done on this branch (2026-11-09): contrib files, v3rt3p submodules, `stacks/yandex-station.yaml` (validated). Device, silverstone-host, and OPNsense steps remain gated on Phase 0. Upstream-contract corrections are applied inline (dropbear path, gigam models, processor env names).
+**Status:** repo-side steps done on this branch (2026-11-09): contrib files, v3rt3p submodules, `stacks/yandex-station.yaml` (validated + full local `docker compose build` passes), CI pre-build workflow (public ghcr, tag = submodule SHA). Device, silverstone-host, and OPNsense steps remain gated on Phase 0. Upstream-contract corrections are applied inline (dropbear path, gigam models, processor env names).
 
 **Working branch:** `feature/yandex-station-midi-self-host` (create in Task 0 Step 0).
 
@@ -43,6 +43,7 @@ Placeholder values to fill on the device and record:
 | File | Responsibility | Change |
 |---|---|---|
 | `stacks/yandex-station.yaml` | The v3rt3p backend stack: 6 containers, `.env`, model assets, healthchecks | Created — committed in Task 4 |
+| `.github/workflows/v3rt3p-images.yml` | CI pre-build of the 5 images → **public** `ghcr.io/salekseev/v3rt3p-<svc>:<submodule-sha7>`; PRs verify, master pushes | Added 2026-11-09 |
 | build repos vendored (git submodules under `stacks/yandex-station/`) | `https-proxy`, `quasar-server`, `quasistreaming-gigam`, `supertonic-tts`, `processor` | Added in Task 3 |
 | `/mnt/spool/apps/config/yandex-station/v3rt3p/.env` (host, silverstone) | `POSTGRES_PASSWORD`, LLM `OPENAI_*` — secrets out of YAML | Created in Task 3 |
 | `/mnt/spool/apps/config/yandex-station/v3rt3p/supertonic-tts-assets/` (host, silverstone, RO) | supertonic TTS model assets (unzipped); GigaAM ASR models self-download to the data cache — no staging | Staged in Task 3 |
@@ -311,7 +312,7 @@ Expected: model assets and prompts staged read-only.
 ! ssh silverstone 'cd /home/salekseev/src/github.com/salekseev/stacks && git submodule add https://github.com/v3rt3p/https-proxy.git stacks/yandex-station/https-proxy && git submodule add https://github.com/v3rt3p/quasar-server.git stacks/yandex-station/quasar-server && git submodule add https://github.com/v3rt3p/quasistreaming-gigam.git stacks/yandex-station/quasistreaming-gigam && git submodule add https://github.com/v3rt3p/supertonic-tts.git stacks/yandex-station/supertonic-tts && git submodule add https://github.com/v3rt3p/processor.git stacks/yandex-station/processor'
 ```
 
-Expected: submodules cloned under `stacks/yandex-station/`. If submodules are undesirable, clone the same repos on silverstone to a documented path and reference `build.context` locally instead (document the path).
+Expected: submodules cloned under `stacks/yandex-station/`. If submodules are undesirable, clone the same repos on silverstone to a documented path and reference `build.context` locally instead (document the path). **Hosting note (2026-11-09):** pushes to `master` trigger `.github/workflows/v3rt3p-images.yml`, which publishes each image to **public** `ghcr.io/salekseev/v3rt3p-<svc>` tagged with the submodule's short SHA — the same SHA pinned in `stacks/yandex-station.yaml` (`image:` lines). silverstone pulls without any registry login (packages are public; the eMudhra `ca.key` baked into https-proxy is the all-zero public placeholder, so no secret leaves the LAN via CI — see spec §5.5). Bump the submodule and its image tag in the same commit.
 
 - [ ] **Step 4: write `.env`** (secrets out of YAML; fill placeholders before deploy)
 
@@ -370,6 +371,7 @@ Design (see spec §5.1/§5.2 — build contexts vendored as submodules, host por
 services:
   # Public entry: NGINX on :80/:443, eMudhra CA, per-domain certs at runtime.
   https-proxy:
+    image: ghcr.io/salekseev/v3rt3p-https-proxy:b4dc462   # tag == submodule short SHA (CI-built)
     build:
       context: ./yandex-station/https-proxy
     container_name: v3rt3p-https-proxy
@@ -384,6 +386,7 @@ services:
 
   # Main "maind" protocol server.
   quasar-server:
+    image: ghcr.io/salekseev/v3rt3p-quasar-server:fefcd58
     build:
       context: ./yandex-station/quasar-server
     container_name: v3rt3p-quasar-server
@@ -420,6 +423,7 @@ services:
   # Toolkit). Models self-download into the mounted cache on first run — do NOT
   # pre-copy legacy ONNX files (upstream README).
   quasistreaming-gigam:
+    image: ghcr.io/salekseev/v3rt3p-quasistreaming-gigam:e1770f1   # CPU variant
     build:
       context: ./yandex-station/quasistreaming-gigam
       dockerfile: "${GIGAAM_DOCKERFILE:-Dockerfile.cpu}"
@@ -433,6 +437,7 @@ services:
 
   # TTS: self-hosted OpenAI-compatible service (model assets mounted RO).
   supertonic-tts:
+    image: ghcr.io/salekseev/v3rt3p-supertonic-tts:d0a6449
     build:
       context: ./yandex-station/supertonic-tts
     container_name: v3rt3p-tts
@@ -444,6 +449,7 @@ services:
 
   # Brain: builds prompts, calls the cloud OpenAI-compatible LLM.
   processor:
+    image: ghcr.io/salekseev/v3rt3p-processor:6129628
     build:
       context: ./yandex-station/processor
     container_name: v3rt3p-processor
@@ -534,10 +540,10 @@ Expected: no processes on 80/443, or "Ports free" message.
 - [ ] **Step 3: deploy the v3rt3p stack** (first run builds 6 images — allow 5–15 min)
 
 ```bash
-! ssh silverstone 'cd /home/salekseev/src/github.com/salekseev/stacks && docker compose -f stacks/yandex-station.yaml --env-file /mnt/spool/apps/config/yandex-station/v3rt3p/.env up -d --build'
+! ssh silverstone 'cd /home/salekseev/src/github.com/salekseev/stacks && docker compose -f stacks/yandex-station.yaml --env-file /mnt/spool/apps/config/yandex-station/v3rt3p/.env up -d'
 ```
 
-Expected: containers build and start.
+Expected: images **pull** from public ghcr (already built by CI after merge; no `docker login` needed). Air-gap/local fallback: append `--build` to build the 6 images from the vendored submodules instead (allow 5–15 min).
 
 - [ ] **Step 4: verify stack is up**
 
