@@ -1,323 +1,107 @@
 # Yandex Station Midi Self-Hosted Stand — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Steps marked **[USER SHELL]** must be run by the user (they touch the physical Midi or silverstone).
+> **For agentic workers:** Steps use checkbox (`- [ ]`) syntax. Steps marked **[USER SHELL]** touch the physical Midi, silverstone, or OPNsense. Do them in the order below. Repo files already on this branch are marked done and are not recommitted here.
 
-**Goal:** Customize a **Yandex Station Midi** (`cucumber`) so it runs a self-hosted backend instead of Yandex cloud. Pipeline = **(A)** one-time root ADB via DNS unlock, then **(B)** a persistent **v3rt3p** backend on `silverstone` (with the eMudhra `https-proxy`). Only the Midi uses silverstone (`192.168.1.10`) as its DNS resolver; OPNsense Unbound is left unchanged. `ntp.yantp.net` resolves there too.
-
-**Architecture:** Phase 0 firmware gate (factory reset + ADB verification) → Phase 1 lock-in (root markers, OTA disable, SSH) + lite-kit stand (temporary DNS/HTTPS proxy) → Phase 2 v3rt3p stack (persistent, eMudhra trust) + OPNsense routing.
-
-**Tech Stack:** Docker Compose, v3rt3p stack (`https-proxy` eMudhra CA, `quasar-server`, `processor` cloud LLM, `quasistreaming-gigam` ASR, `supertonic-tts` TTS, `postgres`, optional `ntp-server`), `4km3/dnsmasq:2.90-r3` for the Midi only, `krevetkqqq/lite-kit` (Phase 1), OPNsense DHCP and firewall, ADB, SSH/Dropbear.
+**Goal:** A Yandex Station Midi (`cucumber`) on the IoT VLAN uses a self-hosted backend. OPNsense Unbound answers the hijack list for that VLAN before the button reset. One factory reset, while lite-kit is listening on `:80/:443`, opens root ADB. Root is locked in. lite-kit is then stopped and `stacks/yandex-station.yaml` takes those ports. DNS does not move.
 
 **Spec:** `docs/superpowers/specs/2026-11-08-yandex-station-midi-self-host-design.md`
 
-**Status:** repo-side steps done on this branch (2026-11-09): contrib files, v3rt3p submodules, `stacks/yandex-station.yaml` (validated + full local `docker compose build` passes), CI pre-build workflow (public ghcr, tag = submodule SHA). Device, silverstone-host, and OPNsense steps remain gated on Phase 0. Upstream-contract corrections are applied inline (dropbear path, gigam models, processor env names).
+**Status:** Repo files are on `feature/yandex-station-midi-self-host` (contrib, five submodules, Compose file, IoT Unbound view, image workflow). Device, silverstone host, and OPNsense steps are still gated on the unlock below. This plan does not downgrade firmware and does not factory-reset a second time.
 
-**Working branch:** `feature/yandex-station-midi-self-host` (create in Task 0 Step 0).
-
----
-
-## Environment notes for the implementer
-
-- Repo: `/home/salekseev/src/github.com/salekseev/stacks`.
-- **silverstone = `192.168.1.10`** (LAN) — the station reaches it here, **not** the `100.77.121.38` Tailscale address.
-- `apps` on silverstone = uid/gid **568**; configs under `/mnt/spool/apps/config/<stack>/`, data under `/mnt/spool/apps/data/<stack>/`.
-- ssh to silverstone: `ssh silverstone` (in `known_hosts`); first time may need `-o StrictHostKeyChecking=accept-new`.
-- **The Midi's current firmware `0.373.1.16…20261104` is newer than everything the community verified.** Phase 0 determines feasibility; a factory reset is destructive and **cannot revert firmware**.
-- **Trust is now expected to just work:** the v3rt3p `https-proxy` uses the **eMudhra intermediate CA**, which the station trusts out of the box — so **no self-generated-CA / firmware trust step is needed**. The residual firmware question (does 0.373 still validate eMudhra?) is confirmed in Phase 0.
-- **Ports 80/443 on 192.168.1.10 and udp/123 must be free** — `scrypted`/`hermes`/`plex` may hold 443; NTP is udp/123.
-- **Do NOT port-forward `:2222`/`:5555`/`:80/:443`/`udp/123` to the WAN.** Root is passwordless and ADB is unauthenticated.
-- The v3rt3p builds come from **remote git URLs**; to keep the stack self-contained, vendor them locally (git submodule under the stack dir) or clone on silverstone — many Docker setups disable remote `build:` contexts.
-
-Placeholder values to fill on the device and record:
-- `<MIDI_IP>` — the Midi's LAN IP (from Phase 0).
-- `<MIDI_MAC>` — the Midi's MAC (capture before the reset).
-- `<OPENAI_BASE_URL>` / `<OPENAI_API_KEY>` / `<OPENAI_MODEL>` — the `processor`'s cloud LLM (OpenRouter/OpenAI/Groq), e.g. `<OPENAI_BASE_URL>=https://openrouter.ai/api/v1`, `<OPENAI_MODEL=nvidia/nemotron-3.5-lightning:free>`.
-- `<GIGAAM_DEVICE>` — `cpu` (simplest, no GPU) or `cuda` (offloads ASR; needs NVIDIA driver + Container Toolkit). Default `cpu`.
-- `<TTS_VOICE>` — e.g. `F1` (v3rt3p voices: M1–M5 male, F1–F6 female).
-- `<lite-kit_platform>` — the firmware folder lite-kit expects for the Midi (likely `cucumber`; confirm from its menu).
+**Working branch:** `feature/yandex-station-midi-self-host`
 
 ---
 
-## File Structure
+## Do these in order
+
+1. **Task 1** — stage Supertonic 3, prompts, and `.env` on silverstone.
+2. **Task 2** — install the IoT Unbound view, the firewall passes, and an IoT DHCP reservation whose DNS server stays `192.168.99.1`. Dig from an IoT host before anything else.
+3. **Task 3** — start lite-kit with `LOCAL_IP=192.168.1.10` and `run/no_downgrade`.
+4. **Task 4** — button reset, then the in-app Wi-Fi join onto IoT, then ADB on silverstone. No `uid=0` means stop.
+5. **Task 5** — lock in root and confirm a reboot.
+6. **Task 6** — `stop.sh` (ignore its "DNS back to automatic" line), then `docker compose up`.
+7. **Task 7** — dig `ntp.yantp.net` from IoT, confirm LAN does not get the hijack, then a normal reboot and a spoken question.
+8. **Task 8** — write down what was verified.
+
+Every `adb` command runs on silverstone (`ssh silverstone 'adb ...'`), so there is one ADB server. The repo checkout used by those commands is `/home/salekseev/src/github.com/salekseev/stacks` on silverstone.
+
+---
+
+## Environment
+
+- silverstone LAN address is `192.168.1.10`. The station must not be sent to the Tailscale address `100.77.121.38`.
+- Speakers live on OPNsense IoT: `opt1`, VLAN 99, `ix2_vlan99`, `192.168.99.0/24`, gateway `192.168.99.1`. IoT also has delegated IPv6. LAN is `192.168.1.0/24`. Russian, CCTV, and DMZ are not in the view.
+- Host paths: config `/mnt/spool/apps/config/yandex-station/`, data `/mnt/spool/apps/data/yandex-station/`. The `apps` account is uid/gid **568**.
+- Current firmware `0.373.1.16…20261104` is newer than the Midi build lite-kit's README records (`factory-9`). A factory reset wipes `/data` and cannot revert firmware.
+- Placeholders: `<MIDI_MAC>` (capture before the reset), `<MIDI_IP>` (an address in `192.168.99.0/24`), `<OPENAI_BASE_URL>`, `<OPENAI_API_KEY>`, `<OPENAI_MODEL>`, `<GIGAAM_DEVICE>` (`cpu` or `cuda`), `<TTS_VOICE>` (`M1`–`M5` or `F1`–`F5`; pinned supertonic README has no `F6`). ADB and SSH run from silverstone, `192.168.1.10`.
+
+---
+
+## File structure
 
 | File | Responsibility | Change |
 |---|---|---|
-| `stacks/yandex-station.yaml` | The v3rt3p backend stack: 6 containers, `.env`, model assets, healthchecks | Created — committed in Task 4 |
-| `.github/workflows/v3rt3p-images.yml` | CI pre-build of the 5 images → **public** `ghcr.io/salekseev/v3rt3p-<svc>:<submodule-sha7>`; PRs verify, master pushes | Added 2026-11-09 |
-| build repos vendored (git submodules under `stacks/yandex-station/`) | `https-proxy`, `quasar-server`, `quasistreaming-gigam`, `supertonic-tts`, `processor` | Added in Task 3 |
-| `/mnt/spool/apps/config/yandex-station/v3rt3p/.env` (host, silverstone) | `POSTGRES_PASSWORD`, LLM `OPENAI_*` — secrets out of YAML | Created in Task 3 |
-| `/mnt/spool/apps/config/yandex-station/v3rt3p/supertonic-tts-assets/` (host, silverstone, RO) | supertonic TTS model assets (unzipped); GigaAM ASR models self-download to the data cache — no staging | Staged in Task 3 |
-| `/mnt/spool/apps/config/yandex-station/v3rt3p/prompts/` (host, silverstone, RO) | `processor` handlebars templates | Staged in Task 3 |
-| `/mnt/spool/apps/data/yandex-station/v3rt3p/` (host, silverstone) | Postgres data + GigaAM cache | Created in Task 3 |
-| `~/lite-kit/` (host, silverstone) | Phase 1 unlock + OTA-downgrade stand | Created/staged in Task 2, removed in Task 5 |
-| OPNsense (Lanner) | Midi DHCP reservation (DNS = `192.168.1.10` only) + four firewall rules. No Unbound Yandex overrides. | **[USER SHELL]** in Task 6 |
+| `stacks/yandex-station.yaml` | v3rt3p services and NTP. Sockets bind `192.168.1.10`. No DNS listener. No healthchecks. | On this branch |
+| `stacks/yandex-station/unbound-iot-view.conf` | IoT Unbound view. `static` A records, `view-first: yes`. `!` CDN names are absent. | On this branch |
+| `stacks/yandex-station/{https-proxy,quasar-server,quasistreaming-gigam,supertonic-tts,processor}` | Five git submodules. Image tags are their short SHAs. | On this branch |
+| `.github/workflows/v3rt3p-images.yml` | PR builds the five images. A master push publishes `ghcr.io/salekseev/v3rt3p-<svc>:<sha>`. | On this branch |
+| `contrib/yandex-noupdate.sh`, `contrib/bin/dropbear`, `contrib/bin/dropbearkey`, `contrib/etc/init.d/S99zdropbear` | OTA disable and Dropbear. Binaries are static ARM EABI5. | On this branch |
+| `/mnt/spool/apps/config/yandex-station/v3rt3p/.env` | Secrets. Mode `600`, owned by the deploying user. | Task 1 |
+| `/mnt/spool/apps/config/yandex-station/v3rt3p/supertonic-tts-assets/` | Supertonic 3 tree, `onnx/` and `voice_styles/` at the top. | Task 1 |
+| `/mnt/spool/apps/config/yandex-station/v3rt3p/prompts/` | Three handlebars files from processor `6129628`. | Task 1 |
+| `/mnt/spool/apps/data/yandex-station/v3rt3p/{postgres-data,gigaam-cache}/` | Postgres data and the GigaAM download cache. | Task 1 |
+| `~/lite-kit/` on silverstone | Unlock HTTPS stand. Not a Compose service. Its dnsmasq is not the speaker's resolver. | Task 3, stopped in Task 6 |
+| `/usr/local/etc/unbound.opnsense.d/yandex-iot.conf` | Copy of the view. Host Overrides stay empty. | Task 2 |
+| OPNsense IoT DHCP and firewall | Reservation on `opt1` with DNS `192.168.99.1`. Passes in §5.6 of the spec. | Task 2 |
 
 ---
 
-## Task 0 (PHASE 0): Factory reset + validation — **the gating step**
+## Task 1: Stage host files on silverstone
 
-**Repo-side Tasks 1–4 are already done on this branch.** The button reset is the device gate, and it runs only after Task 4's lite-kit is answering `192.168.1.10:53` and the Task 6 reservation already sets this Midi's DNS server to `192.168.1.10`. Resetting first leaves the speaker on ordinary DNS, so root ADB does not appear. A factory reset wipes `/data` and cannot revert the firmware version. lite-kit's default mode does not downgrade; this plan does not create `run/downgrade`. If ADB is absent after the reset, stop.
+The Compose file is already in git. This task only fills host directories. Create them as the SSH user so the downloads can write, then hand the asset and data directories to uid `568`. Leave `.env` owned by the deploying user.
 
-**Reset (Midi / `cucumber`):**
-1. Unplug the power cable.
-2. Hold the **rear mute-microphone button** (wiki alt: the center touch button).
-3. Plug power back in and keep holding the button.
-4. Hold **~7–10 s** until the LED turns **yellow-green** (wiki: until a beep + Alice announces reset).
-5. Release; wait 1–2 min for the app-setup prompt.
-
-**Validate — run and record every value. This is the decision gate.**
-
-- [ ] **Step 1: capture the pre-reset MAC and post-reset IP/MAC**
+- [ ] **Step 1: directories**
 
 ```bash
-! ssh silverstone 'sudo arp -an | grep -i <MIDI_MAC>'
+! ssh silverstone 'sudo install -d -o "$(id -u)" -g "$(id -g)" -m 755 \
+  /mnt/spool/apps/config/yandex-station/v3rt3p/supertonic-tts-assets \
+  /mnt/spool/apps/config/yandex-station/v3rt3p/prompts \
+  /mnt/spool/apps/data/yandex-station/v3rt3p/postgres-data \
+  /mnt/spool/apps/data/yandex-station/v3rt3p/gigaam-cache'
 ```
 
-Expected: record the new IP → `<MIDI_IP>` (it should be `192.168.1.x`, **not** `169.254.x.x`). If it is link-local, DHCP failed — resolve that before proceeding.
+Expected: the SSH user can create files in each directory.
 
-- [ ] **Step 2: bring up the Phase 1 stand and check ADB (see Task 2 Step 3 once lite-kit is running). For the gate, use a probe that reflects the reset state:**
+- [ ] **Step 2: Supertonic 3 at the pinned revision**
 
 ```bash
-adb connect <MIDI_IP>:5555
-adb devices
-adb shell id
+! ssh silverstone 'command -v hf >/dev/null || pip install --user "huggingface_hub[cli]"
+hf download supertone-oss-archive/supertonic-3 \
+  --revision aafc6e32416a594460b32413efc49d7fe4ce6d46 \
+  --local-dir /mnt/spool/apps/config/yandex-station/v3rt3p/supertonic-tts-assets
+test -f /mnt/spool/apps/config/yandex-station/v3rt3p/supertonic-tts-assets/onnx/tts.json
+test -f /mnt/spool/apps/config/yandex-station/v3rt3p/supertonic-tts-assets/voice_styles/F1.json'
 ```
 
-Expected: `adb connect …` succeeds, `adb devices` shows `<MIDI_IP>:5555    device`, and `adb shell id` → `uid=0(root)`.
+Expected: `onnx/` and `voice_styles/` are directly inside `supertonic-tts-assets/`. Do not download `v3rt3p-storage.re146.dev/supertonic-tts-model.zip`.
 
-- [ ] **Step 3: record the firmware the device is actually on now**
+- [ ] **Step 3: prompts from the pinned processor commit**
 
 ```bash
-! ssh silverstone 'adb shell getprop ro.build.display.id; adb shell getprop ro.product.cpu.abi'
+! ssh silverstone 'base=https://raw.githubusercontent.com/v3rt3p/processor/612962822873de71d2ca355a3c1d884fc11b1bc3
+dest=/mnt/spool/apps/config/yandex-station/v3rt3p/prompts
+curl -fsSL "$base/prompt.handlebars" -o "$dest/prompt.handlebars"
+curl -fsSL "$base/prompt-state.handlebars" -o "$dest/prompt-state.handlebars"
+curl -fsSL "$base/prompt-functions.handlebars" -o "$dest/prompt-functions.handlebars"'
 ```
 
-Expected: `ro.build.display.id` is either the downgraded trusted build or (surprisingly) still `0.373` with ADB working. Record as `<FIRMWARE_BUILD>`.
+Expected: three non-empty files.
 
-**Decision gate — do NOT proceed until this gate passes:**
-- ✅ `uid=0(root)` ⇒ firmware is unlocked → proceed to Task 1. (Confirm eMudhra trust on this build in Phase 5.)
-- ✅ ADB failed but `~/lite-kit/log/local.log` shows `[OTA-AUTO] … отдаю манифест прошивки` ⇒ downgrade is happening; wait, re-run Step 2, proceed.
-- ⚠️ ADB failed, no downgrade, still `0.373` ⇒ **STOP.** Reset once more to see if it lands on a trusted factory image (factory-6 / factory-9), or take the retail-CA-from-factory route. Do not proceed to Task 3 until Phase 1 root is verified.
-
----
-
-## Task 1 (PHASE 1): Lock in root — markers, OTA, SSH
-
-**Why now:** the unlock is transient. Without this the next cloud sync tears ADB down (Mini 2 logs `Deactivate adb by quasmodrom config`). **Do this while the site is still pointed at silverstone, before restoring DNS.**
-
-**Files:**
-- Create: `contrib/yandex-noupdate.sh` (from Marker284/yandex-station-extended)
-- Create: `contrib/bin/dropbear`, `contrib/bin/dropbearkey` (from Marker284/yandex-station-binaries)
-- Create: `contrib/etc/init.d/S99zdropbear` (init script for autostart)
-
-- [x] **Step 1: create contrib directory structure**
+- [ ] **Step 4: `.env`**
 
 ```bash
-mkdir -p /home/salekseev/src/github.com/salekseev/stacks/contrib/bin /home/salekseev/src/github.com/salekseev/stacks/contrib/etc/init.d
-```
-
-Expected: directories created.
-
-- [x] **Step 2: fetch & place yandex-noupdate.sh**
-
-Download from `https://raw.githubusercontent.com/Marker284/yandex-station-extended/main/contrib/yandex-noupdate.sh`:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/Marker284/yandex-station-extended/main/contrib/yandex-noupdate.sh -o /home/salekseev/src/github.com/salekseev/stacks/contrib/yandex-noupdate.sh
-chmod +x /home/salekseev/src/github.com/salekseev/stacks/contrib/yandex-noupdate.sh
-```
-
-Expected: file exists and is executable.
-
-- [x] **Step 3: fetch dropbear binaries**
-
-Download from `https://github.com/Marker284/yandex-station-binaries` — verified path is `bin/` (not `arm/`): the shipped `dropbear`/`dropbearkey` are **static 32-bit ARM (armhf/EABI5)** builds, the ones the hackalice ecosystem ships for these stations; Amlogic A5 (Cortex-A55) executes AArch32. Confirm `ro.product.cpu.abi` in Phase 0 Step 3 and verify the binary runs before Task 1 Step 8.
-
-```bash
-# Fetch dropbear and dropbearkey (static armhf)
-curl -fsSL https://github.com/Marker284/yandex-station-binaries/raw/main/bin/dropbear -o /home/salekseev/src/github.com/salekseev/stacks/contrib/bin/dropbear
-curl -fsSL https://github.com/Marker284/yandex-station-binaries/raw/main/bin/dropbearkey -o /home/salekseev/src/github.com/salekseev/stacks/contrib/bin/dropbearkey
-chmod +x /home/salekseev/src/github.com/salekseev/stacks/contrib/bin/dropbear /home/salekseev/src/github.com/salekseev/stacks/contrib/bin/dropbearkey
-```
-
-Expected: both binaries exist and are executable.
-
-- [x] **Step 4: create S99zdropbear init script**
-
-```bash
-cat > /home/salekseev/src/github.com/salekseev/stacks/contrib/etc/init.d/S99zdropbear << 'EOF'
-#!/bin/sh
-DB=/data/opt/bin/dropbear
-HK=/data/opt/etc/dropbear/hk_ed25519
-mkdir -p $(dirname "$HK")
-[ -f "$HK" ] || "$DB"key -t ed25519 -f "$HK"
-exec "$DB" -r "$HK" -p 2222 -B
-EOF
-chmod +x /home/salekseev/src/github.com/salekseev/stacks/contrib/etc/init.d/S99zdropbear
-```
-
-Expected: script exists, is executable, starts Dropbear with empty password.
-
-- [ ] **Step 5: create ADB marker directories**
-
-```bash
-! ssh silverstone 'adb connect <MIDI_IP>:5555 >/dev/null && adb shell "mkdir -p /data/quasar /data/opt/bin /data/opt/etc/dropbear /data/opt/etc/init.d"'
-```
-
-Expected: all dirs created on device.
-
-- [ ] **Step 6: pin ADB autostart markers (immutable)**
-
-```bash
-! ssh silverstone 'adb shell "touch /data/quasar/activate_adb_quasmodrom /data/quasar/activate_network_adb && chattr +i /data/quasar/activate_adb_quasmodrom /data/quasar/activate_network_adb"'
-```
-
-Expected: markers set and immutable.
-
-- [ ] **Step 7: push and run OTA-disable script**
-
-```bash
-! ssh silverstone 'adb push /home/salekseev/src/github.com/salekseev/stacks/contrib/yandex-noupdate.sh /data/opt/yandex-noupdate.sh && adb shell sh /data/opt/yandex-noupdate.sh && adb shell sh /data/opt/yandex-noupdate.sh status'
-```
-
-Expected `status` output (3 lines):
-```
-launch.json : updatesd убран
-applier : заглушён
-ota key : подменён
-```
-
-- [ ] **Step 8: push dropbear binaries**
-
-```bash
-! ssh silverstone 'adb push /home/salekseev/src/github.com/salekseev/stacks/contrib/bin/dropbear /data/opt/bin/dropbear && adb push /home/salekseev/src/github.com/salekseev/stacks/contrib/bin/dropbearkey /data/opt/bin/dropbearkey && adb shell chmod +x /data/opt/bin/dropbear /data/opt/bin/dropbearkey'
-```
-
-Expected: both files on device, executable.
-
-- [ ] **Step 9: generate Dropbear host key**
-
-```bash
-! ssh silverstone 'adb shell /data/opt/bin/dropbearkey -t ed25519 -f /data/opt/etc/dropbear/hk_ed25519'
-```
-
-Expected: key file generated (output: `Generating key, this may take a while...` then done).
-
-- [ ] **Step 10: push init script and set up autostart**
-
-```bash
-! ssh silverstone 'adb push /home/salekseev/src/github.com/salekseev/stacks/contrib/etc/init.d/S99zdropbear /data/opt/etc/init.d/S99zdropbear && adb shell chmod +x /data/opt/etc/init.d/S99zdropbear && adb shell /data/opt/etc/init.d/S99zdropbear'
-```
-
-Expected: Dropbear starts (may log to syslog; `netstat -an | grep 2222` on device should show listening).
-
-- [x] **Step 11: commit the contrib files** (done repo-side 2026-11-09; device push of Steps 7–10 still gated on Phase 0)
-
-```bash
-cd /home/salekseev/src/github.com/salekseev/stacks
-git add contrib/
-git commit -m "feat(yandex-station): add OTA-disable and Dropbear SSH for Phase 1 unlock
-
-Add yandex-noupdate.sh from Marker284/yandex-station-extended to disable OTA
-updates and protect ADB root. Include Dropbear binaries and init script for
-SSH access on tcp/2222 with passwordless ed25519 root (LAN-only, firewall-scoped).
-
-Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
-```
-
-Expected: commit succeeds.
-
-- [ ] **Step 12: verify locked-in state survives reboot**
-
-```bash
-! ssh silverstone 'adb shell sh /data/opt/yandex-noupdate.sh status'
-adb connect <MIDI_IP>:5555 >/dev/null
-adb shell id
-ssh -p 2222 root@<MIDI_IP> "id; getprop ro.build.display.id"
-```
-
-Expected:
-- `status` → 3-of-3 (OTA disabled, markers intact)
-- `adb shell id` → `uid=0(root)`
-- `ssh` login works, shows `uid=0` + `<FIRMWARE_BUILD>`
-
----
-
-## Task 2 (PHASE 1): Verify lite-kit is running (already started in Task 0)
-
-**Why:** lite-kit is the temporary stand that serves `/get_sync_info` with `adbd.remoteActivation=true` and — when the installed firmware is newer than a trusted build — the automatic downgrade. Started in Task 0; keep running through Task 1. **Remove before Task 5** (v3rt3p startup). The v3rt3p path does **not** need a self-generated CA, but lite-kit is still required for the root unlock itself.
-
-- [ ] **Step 1: confirm lite-kit is still running**
-
-```bash
-! ssh silverstone 'ps aux | grep lite-kit | grep -v grep'
-```
-
-Expected: process running (e.g., `python3 server.py` or similar).
-
-- [ ] **Step 2: check lite-kit logs for unlock signals**
-
-```bash
-! ssh silverstone 'tail -n 50 ~/lite-kit/log/server.log'
-```
-
-Expected to see entries like:
-```
->>> [SYNC-REAL→] payload …, adbd: config.system_config.adbd=on, …, top.adbd=on
-```
-(This confirms the Midi queried the stand and received activation payload.)
-
-- [ ] **Step 3: confirm NTP path (required for v3rt3p reset/use)**
-
-```bash
-! ssh silverstone 'drill @127.0.0.1 ntp.yantp.net A || dig +short ntp.yantp.net @127.0.0.1'
-```
-
-Expected: resolves to silverstone's IP once the OPNsense override from Task 6 is in place; note this is only fully verifiable after Task 6, but the resolution requirement must be known before the stack is deployed.
-
----
-
-## Task 3 (PHASE 2): Prepare the v3rt3p stack on silverstone
-
-**Why:** v3rt3p is the persistent backend. It is **six cooperating container builds**, not a single source build. Stage the build repos, model assets, prompts, and `.env` here; compose + deploy in Tasks 4–5.
-
-**Files:**
-- Vend: the five `v3rt3p/*` build repos (as git submodules under `stacks/yandex-station/`, or cloned on silverstone). **Done on this branch.**
-- Create: `/mnt/spool/apps/config/yandex-station/v3rt3p/` (compose, `.env`, prompts).
-- Create: `/mnt/spool/apps/config/yandex-station/v3rt3p/supertonic-tts-assets/` (RO: supertonic TTS model). GigaAM ASR models are **self-downloaded** into the data cache at first run — per the upstream README, do **not** pre-copy legacy GigaAM ONNX/token files into that cache.
-- Create: `/mnt/spool/apps/data/yandex-station/v3rt3p/` (Postgres + ASR cache).
-
-- [ ] **Step 1: prepare host config/data directories** (on silverstone)
-
-```bash
-! ssh silverstone 'sudo install -d -o 568 -g 568 -m 700 /mnt/spool/apps/config/yandex-station/v3rt3p/supertonic-tts-assets /mnt/spool/apps/config/yandex-station/v3rt3p/prompts /mnt/spool/apps/data/yandex-station/v3rt3p/postgres-data /mnt/spool/apps/data/yandex-station/v3rt3p/gigaam-cache'
-```
-
-Expected: directories created with correct ownership (uid/gid 568 = `apps` user).
-
-- [ ] **Step 2: stage model + prompt assets** (download the TTS model zip and the processor prompt templates; no ASR asset staging — see Files note above)
-
-```bash
-! ssh silverstone 'cd /mnt/spool/apps/config/yandex-station/v3rt3p && \
-wget https://v3rt3p-storage.re146.dev/supertonic-tts-model.zip -O supertonic-tts-assets/model.zip && unzip -o supertonic-tts-assets/model.zip -d supertonic-tts-assets/ && rm -f supertonic-tts-assets/model.zip && \
-wget https://raw.githubusercontent.com/v3rt3p/processor/refs/heads/master/prompt.handlebars -O prompts/prompt.handlebars && \
-wget https://raw.githubusercontent.com/v3rt3p/processor/refs/heads/master/prompt-state.handlebars -O prompts/prompt-state.handlebars && \
-wget https://raw.githubusercontent.com/v3rt3p/processor/refs/heads/master/prompt-functions.handlebars -O prompts/prompt-functions.handlebars'
-```
-
-Expected: model assets and prompts staged read-only.
-
-- [x] **Step 3: vend the build repos locally** (so the stack is self-contained, not dependent on remote `build:` URLs) — **done on this branch 2026-11-09**
-
-```bash
-! ssh silverstone 'cd /home/salekseev/src/github.com/salekseev/stacks && git submodule add https://github.com/v3rt3p/https-proxy.git stacks/yandex-station/https-proxy && git submodule add https://github.com/v3rt3p/quasar-server.git stacks/yandex-station/quasar-server && git submodule add https://github.com/v3rt3p/quasistreaming-gigam.git stacks/yandex-station/quasistreaming-gigam && git submodule add https://github.com/v3rt3p/supertonic-tts.git stacks/yandex-station/supertonic-tts && git submodule add https://github.com/v3rt3p/processor.git stacks/yandex-station/processor'
-```
-
-Expected: submodules cloned under `stacks/yandex-station/`. If submodules are undesirable, clone the same repos on silverstone to a documented path and reference `build.context` locally instead (document the path). **Hosting note (2026-11-09):** pushes to `master` trigger `.github/workflows/v3rt3p-images.yml`, which publishes each image to **public** `ghcr.io/salekseev/v3rt3p-<svc>` tagged with the submodule's short SHA — the same SHA pinned in `stacks/yandex-station.yaml` (`image:` lines). silverstone pulls without any registry login (packages are public; the eMudhra `ca.key` baked into https-proxy is the all-zero public placeholder, so no secret leaves the LAN via CI — see spec §5.5). Bump the submodule and its image tag in the same commit.
-
-- [ ] **Step 4: write `.env`** (secrets out of YAML; fill placeholders before deploy)
-
-```bash
-! ssh silverstone 'cat > /mnt/spool/apps/config/yandex-station/v3rt3p/.env << EOF
+! ssh silverstone 'umask 077
+cat > /mnt/spool/apps/config/yandex-station/v3rt3p/.env << EOF
 POSTGRES_PASSWORD=<POSTGRES_PASSWORD>
 OPENAI_BASE_URL=<OPENAI_BASE_URL>
 OPENAI_API_KEY=<OPENAI_API_KEY>
@@ -329,333 +113,246 @@ EOF
 chmod 600 /mnt/spool/apps/config/yandex-station/v3rt3p/.env'
 ```
 
-Expected: `.env` present with mode 600; every placeholder filled before Task 5. **Compose does not auto-read this path** — it is passed explicitly with `--env-file` at deploy time (Task 5 Step 3).
+Expected: mode `600`, no `<PLACEHOLDER>` left, file not in git. Compose reads it only when `--env-file` is passed.
 
-- [ ] **Step 5: commit staging** (assets + submodules). Expected: commit succeeds.
+- [ ] **Step 5: ownership**
 
 ```bash
-cd /home/salekseev/src/github.com/salekseev/stacks
-git add stacks/yandex-station/  # submodules + asset symlinks (do NOT commit real secrets)
-git commit -m "feat(yandex-station): stage v3rt3p build repos and model/prompt assets for the rooted Midi
-
-Vend v3rt3p https-proxy, quasar-server, quasistreaming-gigam, supertonic-tts
-and processor as git submodules; stage GigaAM ASR ONNX, supertonic TTS model
-and processor prompt templates. .env (secrets) is filled before deploy and
-kept out of git.
-
-Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
+! ssh silverstone 'chmod -R a+rX /mnt/spool/apps/config/yandex-station/v3rt3p/supertonic-tts-assets /mnt/spool/apps/config/yandex-station/v3rt3p/prompts
+sudo chown -R 568:568 \
+  /mnt/spool/apps/config/yandex-station/v3rt3p/supertonic-tts-assets \
+  /mnt/spool/apps/config/yandex-station/v3rt3p/prompts \
+  /mnt/spool/apps/data/yandex-station/v3rt3p
+chmod 600 /mnt/spool/apps/config/yandex-station/v3rt3p/.env'
 ```
 
-> **Do not commit the real `.env`** — only the structure. Fill `<...>` placeholders in Task 5 before deploy.
+Expected: `.env` stays owned by the deploying user. The GigaAM and Supertonic images have no `USER` instruction, so they run as root and can use these mounts. Do not commit host assets or `.env`.
 
 ---
 
-## Task 4 (PHASE 2): Create `stacks/yandex-station.yaml`
+## Task 2: IoT view, firewall, reservation **[USER SHELL]**
 
-**Files:**
-- Create: `stacks/yandex-station.yaml` (v3rt3p compose tailored to this repo's conventions)
+Do this before the button reset. lite-kit is not running yet. The speaker cannot reach silverstone until the IoT passes exist.
 
-- [x] **Step 1: write `stacks/yandex-station.yaml`** (done 2026-11-09, with the upstream-contract corrections noted above)
+- [ ] **Step 1: record `<MIDI_MAC>`** from the current lease or the speaker label.
 
-Design (see spec §5.1/§5.2 — build contexts vendored as submodules, host ports bound to `192.168.1.10`, `.env` for secrets). This mirrors the upstream `v3rt3p/v3rt3p.github.io` `docker-compose.yml` (the canonical deployment manifest, verified 2026-11-09) but uses **local** build contexts (submodules) and binds the LAN IP. Env values must be `${VAR:-default}` **compose interpolations, not `<placeholder>` literals**; secrets come from the config-dir `.env` via `--env-file` (Task 5).
+- [ ] **Step 2: install the view.** Copy `stacks/yandex-station/unbound-iot-view.conf` to `/usr/local/etc/unbound.opnsense.d/yandex-iot.conf`. Run `configctl unbound check`, then `configctl unbound restart`. Leave Services → Unbound DNS → Overrides empty.
 
-```yaml
-# $schema: https://raw.githubusercontent.com/compose-spec/compose-spec/refs/heads/main/schema/compose-spec.json
-#
-# Yandex Station self-hosted backend (v3rt3p). Impersonates Yandex cloud so the
-# rooted Midi resolves quasar.yandex.net/.ru, scbh.yandex.net, ntp.yantp.net, etc.
-# to silverstone:80/:443 (+ udp/123 NTP). Trust is via the eMudhra intermediate CA
-# shipped by https-proxy (station trusts it out of the box). LAN-only exposure:
-# OPNsense firewall (Task 6) restricts source to the Midi IP.
+- [ ] **Step 3: firewall.**
 
-services:
-  # Public entry: NGINX on :80/:443, eMudhra CA, per-domain certs at runtime.
-  https-proxy:
-    image: ghcr.io/salekseev/v3rt3p-https-proxy:b4dc462   # tag == submodule short SHA (CI-built)
-    build:
-      context: ./yandex-station/https-proxy
-    container_name: v3rt3p-https-proxy
-    restart: unless-stopped
-    ports:
-      - "192.168.1.10:80:80"
-      - "192.168.1.10:443:443"
-    environment:
-      YANDEX_UPSTREAM_URL: http://quasar-server:31115
-    depends_on:
-      - quasar-server
+On IoT (`opt1`), above the IoT-to-LAN block:
 
-  # Main "maind" protocol server.
-  quasar-server:
-    image: ghcr.io/salekseev/v3rt3p-quasar-server:fefcd58
-    build:
-      context: ./yandex-station/quasar-server
-    container_name: v3rt3p-quasar-server
-    restart: unless-stopped
-    environment:
-      ALLOW_UPDATES: "true"
-      PORT: "31115"
-      API_PORT: "31116"
-      TTS_OPENAI_BASE_URL: http://supertonic-tts:9150
-      TTS_OPENAI_VOICE: "${TTS_VOICE:-F1}"          # supertonic voices: M1–M5, F1–F5
-      PROCESSOR_BASIC_URL: http://processor:8080    # base URL; processor appends its route
-      STT_GIGAAM_URL: ws://quasistreaming-gigam:8080
-      POSTGRES_URL: postgres://quasar:${POSTGRES_PASSWORD:-change-me}@postgres:5432/quasar
-    ports:
-      - "192.168.1.10:31116:31116"   # external API port for controlling the speakers
-    depends_on:
-      - postgres
-      - processor
-      - quasistreaming-gigam
-      - supertonic-tts
+1. Pass source `192.168.99.0/24` to `192.168.1.10` TCP `80,443,31116`.
+2. Pass source `192.168.99.0/24` to `192.168.1.10` UDP `123`.
 
-  postgres:
-    image: postgres:17
-    container_name: v3rt3p-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: quasar
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
-      POSTGRES_DB: quasar
-    volumes:
-      - /mnt/spool/apps/data/yandex-station/v3rt3p/postgres-data:/var/lib/postgresql/data
+On LAN, above the default allow:
 
-  # ASR: GigaAM. Default CPU; GIGAAM_DEVICE=cuda for GPU (needs NVIDIA + Container
-  # Toolkit). Models self-download into the mounted cache on first run — do NOT
-  # pre-copy legacy ONNX files (upstream README).
-  quasistreaming-gigam:
-    image: ghcr.io/salekseev/v3rt3p-quasistreaming-gigam:e1770f1   # CPU variant
-    build:
-      context: ./yandex-station/quasistreaming-gigam
-      dockerfile: "${GIGAAM_DOCKERFILE:-Dockerfile.cpu}"
-    container_name: v3rt3p-gigam
-    restart: unless-stopped
-    environment:
-      GIGAAM_DEVICE: "${GIGAAM_DEVICE:-cpu}"  # cpu | cuda
-      GIGAAM_DOWNLOAD_ROOT: /app/.cache/gigaam
-    volumes:
-      - /mnt/spool/apps/data/yandex-station/v3rt3p/gigaam-cache:/app/.cache/gigaam
+3. Pass source `192.168.1.10` to `<MIDI_IP>` TCP `2222,5555`.
+4. Reject other LAN sources to `<MIDI_IP>` TCP `2222,5555`.
 
-  # TTS: self-hosted OpenAI-compatible service (model assets mounted RO).
-  supertonic-tts:
-    image: ghcr.io/salekseev/v3rt3p-supertonic-tts:d0a6449
-    build:
-      context: ./yandex-station/supertonic-tts
-    container_name: v3rt3p-tts
-    restart: unless-stopped
-    environment:
-      ASSETS_PATH: /assets
-    volumes:
-      - /mnt/spool/apps/config/yandex-station/v3rt3p/supertonic-tts-assets:/assets:ro
+No pass for port `53` to silverstone. No WAN forward of those ports. Apply.
 
-  # Brain: builds prompts, calls the cloud OpenAI-compatible LLM.
-  processor:
-    image: ghcr.io/salekseev/v3rt3p-processor:6129628
-    build:
-      context: ./yandex-station/processor
-    container_name: v3rt3p-processor
-    restart: unless-stopped
-    environment:
-      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://openrouter.ai/api/v1}
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      OPENAI_MODEL: ${OPENAI_MODEL}
-      PROMPT_TEMPLATE_PATH: /prompt.handlebars
-      STATE_PROMPT_TEMPLATE_PATH: /prompt-state.handlebars
-      FUNCTIONS_PROMPT_TEMPLATE_PATH: /prompt-functions.handlebars
-      CACHE_SIZE: "1000"
-    volumes:
-      - /mnt/spool/apps/config/yandex-station/v3rt3p/prompts/prompt.handlebars:/prompt.handlebars:ro
-      - /mnt/spool/apps/config/yandex-station/v3rt3p/prompts/prompt-state.handlebars:/prompt-state.handlebars:ro
-      - /mnt/spool/apps/config/yandex-station/v3rt3p/prompts/prompt-functions.handlebars:/prompt-functions.handlebars:ro
+- [ ] **Step 4: OPNsense → Services → DHCPv4 → IoT (`opt1`) → Reservations.** MAC `<MIDI_MAC>`, IP `<MIDI_IP>` inside `192.168.99.0/24`. DNS servers for this reservation: `192.168.99.1`, the same as the rest of IoT. Do not set `192.168.1.10`.
 
-  # Optional but required for reset: NTP server (public image).
-  ntp-server:
-    image: cturra/ntp:latest
-    container_name: v3rt3p-ntp
-    restart: unless-stopped
-    ports:
-      - "192.168.1.10:123:123/udp"
-    environment:
-      NTP_SERVERS: time1.google.com,time2.google.com,time.cloudflare.com
-
-  # Healthchecks omitted by default (upstream images ship no proven probes); add
-  # per service once a readiness signal is evidenced. The real trust check is TLS
-  # to https://quasar.yandex.net on :443.
-```
-
-- [x] **Step 2: validate statically** (done 2026-11-09: `Validation successful`; only warning is unset `OPENAI_MODEL`, expected without the env file)
+- [ ] **Step 5: dig from a host that has an address in `192.168.99.0/24`.** A query from silverstone does not test the view, because the client address would be `192.168.1.10`.
 
 ```bash
-cd /home/salekseev/src/github.com/salekseev/stacks
-./scripts/validate-stack.sh yandex-station
+dig @192.168.99.1 quasar.yandex.net A +short
+dig @192.168.99.1 quasar.yandex.net AAAA +short
+dig @192.168.1.1 quasar.yandex.net A +short
 ```
 
-Expected: `Validation successful for stacks/yandex-station.yaml`. If `docker-compose` (v1) is missing, run `docker compose -f stacks/yandex-station.yaml config > /dev/null && echo OK`.
-
-- [x] **Step 3: commit** (done 2026-11-09, commit below on this branch)
-
-```bash
-cd /home/salekseev/src/github.com/salekseev/stacks
-git add stacks/yandex-station.yaml
-git commit -m "feat(yandex-station): self-hosted v3rt3p backend for the rooted Midi
-
-V3rt3p stack (https-proxy eMudhra CA, quasar-server, processor cloud LLM,
-quasistreaming-gigam ASR, supertonic-tts, postgres, optional ntp-server).
-https-proxy terminates quasar.yandex.net/.ru, scbh.yandex.net, ntp.yantp.net,
-etc. at silverstone:80/:443; the station trusts it via the eMudhra CA, so no
-firmware CA step is needed. Build contexts are vendored as submodules; host
-ports bound to 192.168.1.10 (matches plex.yaml/scrypted.yaml) so the LAN
-station can reach it; OPNsense firewall (Task 6) scopes :80/:443/udp/123 to
-the Midi IP.
-
-Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
-```
-
-Expected: commit succeeds.
+Expected: the first command prints `192.168.1.10`. The AAAA command prints nothing. The third command, run from a LAN host, does not print `192.168.1.10`. Stop if the IoT query is wrong. The button reset would then join ordinary Yandex DNS.
 
 ---
 
-## Task 5 (PHASE 2): Stop lite-kit and deploy v3rt3p
+## Task 3: Start lite-kit
 
-**Why:** lite-kit and the v3rt3p `https-proxy` both need `:80/:443`. lite-kit is temporary (unlock only); v3rt3p is permanent. Stop lite-kit before starting it.
+Linux `start.sh` needs the distro `dnsmasq` package (`apt install dnsmasq`, `pacman -S dnsmasq`, or the equivalent) because the script starts it. That process hijacks only `quasar.yandex.net`, `quasar.yandex.ru`, and `scbh.yandex.net` on `192.168.1.10`. The speaker does not query it. The IoT view from Task 2 is the resolver, and lite-kit's job is the HTTPS unlock on `:80/:443`.
 
-**Files:**
-- Deploy: `stacks/yandex-station.yaml` on silverstone
+- [ ] **Step 1: clone, block firmware serving, start on the LAN address**
+
+```bash
+! ssh silverstone 'test -d ~/lite-kit/.git || git clone https://github.com/krevetkqqq/lite-kit.git ~/lite-kit
+find ~/lite-kit/firmware -name "*.zip" -print | grep -q . && { echo "firmware zip present; remove it"; exit 1; }
+mkdir -p ~/lite-kit/run
+touch ~/lite-kit/run/no_downgrade
+cd ~/lite-kit && sudo LOCAL_IP=192.168.1.10 ./start.sh'
+```
+
+Expected: the script prints address `192.168.1.10`. `run/no_downgrade` is the flag `equasar_server.py` honors. `run/downgrade` only changes the banner. Do not run `install-firmware.sh`.
+
+- [ ] **Step 2: confirm the stand**
+
+```bash
+! ssh silverstone 'ps -p "$(cat ~/lite-kit/run/server.pid)" -o args=
+dig @192.168.1.10 quasar.yandex.net A +short
+dig @192.168.1.10 quasar.yandex.net AAAA +short'
+```
+
+Expected: the process is `scripts/equasar_server.py`. `dig @192.168.1.10` may also print `192.168.1.10`; that only proves lite-kit's own dnsmasq. The speaker uses Task 2's view. `ps | grep lite-kit` is the wrong check: the argv does not contain that string.
+
+---
+
+## Task 4: One button reset, app join, ADB gate **[USER SHELL]**
+
+Task 2's view answers from an IoT source, and Task 3 is listening on `:80/:443`. Resetting before both leaves the speaker on ordinary DNS or with nowhere to send the unlock query.
+
+**Reset (Midi / `cucumber`):** unplug power, hold the rear mute-microphone button, plug power back in, hold about 7–10 seconds until the LED is yellow-green, release, and wait for the setup prompt.
+
+- [ ] **Step 1: join the IoT Wi-Fi in the Yandex app while lite-kit is still up.** Add the device on VLAN 99. The unlock query happens during that join, not at the moment the LED changes.
+
+- [ ] **Step 2: ADB from silverstone**
+
+```bash
+! ssh silverstone 'adb connect <MIDI_IP>:5555
+adb devices
+adb shell id
+adb shell getprop ro.build.display.id
+adb shell getprop ro.product.cpu.abi'
+```
+
+Expected: `<MIDI_IP>:5555 device` and `uid=0(root)`. Record the firmware as `<FIRMWARE_BUILD>` and the ABI. Confirm the ABI can run the static ARM EABI5 Dropbear before Task 5.
+
+**Gate:** `uid=0` continues to Task 5. Anything else stops the procedure. `firmware/` is empty and `run/no_downgrade` is set, so there is no `[OTA-AUTO]` manifest to wait for.
+
+---
+
+## Task 5: Lock in root **[USER SHELL]**
+
+Do this while lite-kit is still listening on `:80/:443`, before Task 6. The IoT view stays as it is.
+
+- [x] **Repo files** `contrib/yandex-noupdate.sh`, `contrib/bin/dropbear`, `contrib/bin/dropbearkey`, and `contrib/etc/init.d/S99zdropbear` are already on the branch.
+
+- [ ] **Step 1: markers**
+
+```bash
+! ssh silverstone 'adb shell "mkdir -p /data/quasar /data/opt/bin /data/opt/etc/dropbear /data/opt/etc/init.d"
+adb shell "touch /data/quasar/activate_adb_quasmodrom /data/quasar/activate_network_adb && chattr +i /data/quasar/activate_adb_quasmodrom /data/quasar/activate_network_adb"'
+```
+
+- [ ] **Step 2: OTA disable**
+
+`yandex-noupdate.sh` with no argument runs `disable`.
+
+```bash
+! ssh silverstone 'adb push /home/salekseev/src/github.com/salekseev/stacks/contrib/yandex-noupdate.sh /data/opt/yandex-noupdate.sh
+adb shell sh /data/opt/yandex-noupdate.sh
+adb shell sh /data/opt/yandex-noupdate.sh status'
+```
+
+Expected status includes `launch.json : updatesd убран`, `applier     : заглушён`, `ota key     : подменён`, and `maind --updatesd не запущен`.
+
+- [ ] **Step 3: Dropbear**
+
+```bash
+! ssh silverstone 'adb push /home/salekseev/src/github.com/salekseev/stacks/contrib/bin/dropbear /data/opt/bin/dropbear
+adb push /home/salekseev/src/github.com/salekseev/stacks/contrib/bin/dropbearkey /data/opt/bin/dropbearkey
+adb shell chmod +x /data/opt/bin/dropbear /data/opt/bin/dropbearkey
+adb shell /data/opt/bin/dropbearkey -t ed25519 -f /data/opt/etc/dropbear/hk_ed25519
+adb push /home/salekseev/src/github.com/salekseev/stacks/contrib/etc/init.d/S99zdropbear /data/opt/etc/init.d/S99zdropbear
+adb shell chmod +x /data/opt/etc/init.d/S99zdropbear
+adb shell /data/opt/etc/init.d/S99zdropbear'
+```
+
+Expected: the binary runs (Task 4 recorded an ABI that can execute AArch32), and something is listening on TCP `2222`.
+
+- [ ] **Step 4: reboot and re-check**
+
+```bash
+! ssh silverstone 'adb shell reboot'
+```
+
+Wait for the speaker, then:
+
+```bash
+! ssh silverstone 'adb connect <MIDI_IP>:5555
+adb shell id
+adb shell sh /data/opt/yandex-noupdate.sh status'
+ssh -p 2222 -o StrictHostKeyChecking=accept-new root@<MIDI_IP> id
+```
+
+Expected: `uid=0(root)` over both ADB and SSH. Dropbear has an empty root password (`-B`). The speaker stays on IoT.
+
+---
+
+## Task 6: Stop lite-kit and start the stack
 
 - [ ] **Step 1: stop lite-kit**
 
 ```bash
-! ssh silverstone 'cd ~/lite-kit && sudo ./stop.sh'
+! ssh silverstone 'cd ~/lite-kit && sudo ./stop.sh
+ss -tulpn | grep -E ":(53|80|443)" || echo "ports free"'
 ```
 
-Expected: lite-kit stopped (ports 53/80/443 freed).
+Expected: `equasar_server.py` and lite-kit's dnsmasq are gone, and `:80` and `:443` on `192.168.1.10` are free. `stop.sh` says to put router DNS back on automatic. Do not. IoT DNS stays `192.168.99.1`, and the view stays loaded.
 
-- [ ] **Step 2: verify ports are free**
+- [ ] **Step 2: deploy**
+
+`up -d` pulls the five ghcr images after they have been published from `master`. Until that workflow has published the pinned tags, add `--build`.
 
 ```bash
-! ssh silverstone 'sudo netstat -tlnp | grep -E ":(80|443)" || echo "Ports free"'
+! ssh silverstone 'docker compose -f /home/salekseev/src/github.com/salekseev/stacks/stacks/yandex-station.yaml --env-file /mnt/spool/apps/config/yandex-station/v3rt3p/.env up -d
+docker compose -f /home/salekseev/src/github.com/salekseev/stacks/stacks/yandex-station.yaml ps'
 ```
 
-Expected: no processes on 80/443, or "Ports free" message.
+Expected: each service is `Up`. None of them define a healthcheck, so Compose will not say `healthy`. Listeners: `192.168.1.10:80`, `:443`, `:31116`, and UDP `:123`. This stack does not listen on port `53`.
 
-- [ ] **Step 3: deploy the v3rt3p stack** (first run builds 6 images — allow 5–15 min)
-
-```bash
-! ssh silverstone 'cd /home/salekseev/src/github.com/salekseev/stacks && docker compose -f stacks/yandex-station.yaml --env-file /mnt/spool/apps/config/yandex-station/v3rt3p/.env up -d'
-```
-
-Expected: images **pull** from public ghcr (already built by CI after merge; no `docker login` needed). Air-gap/local fallback: append `--build` to build the 6 images from the vendored submodules instead (allow 5–15 min).
-
-- [ ] **Step 4: verify stack is up**
-
-```bash
-! ssh silverstone 'docker compose -f stacks/yandex-station.yaml ps'
-```
-
-Expected: `v3rt3p-https-proxy` Up and healthy on `192.168.1.10:80/:443`.
-
-- [ ] **Step 5: confirm eMudhra trust (Phase 2 trust is now "just works")**
+- [ ] **Step 3: certificate**
 
 ```bash
 ! ssh silverstone 'openssl s_client -connect 192.168.1.10:443 -servername quasar.yandex.net </dev/null 2>/dev/null | openssl x509 -noout -issuer -subject'
 ```
 
-Expected: issuer is the **eMudhra/emSign intermediate CA** for `quasar.yandex.net` (not a self-generated CA). This is the decisive test that the Nov-4 build's trust path works.
-
-- [ ] **Step 6: end-to-end (requires Task 6 DNS + NTP)**
-
-```bash
-! ssh silverstone 'docker logs v3rt3p-quasar-server | tail -20'
-```
-
-Expected: once the Midi is re-pointed (Task 6), see `/register` and `/token` as the station connects.
+Expected: the leaf issuer is `CN=EM EV TLS CA - G3C`.
 
 ---
 
-## Task 6 (PHASE 2 + OPNsense): Wire the DNS routing
+## Task 7: DNS check and spoken request **[USER SHELL]**
 
-**Why:** the Midi must resolve the hijack list and `ntp.yantp.net` to silverstone. OPNsense Unbound stays unchanged. Only this Midi's DHCP DNS server is `192.168.1.10`, where dnsmasq answers. Do this reservation before the Task 0 button reset, while lite-kit is stopped; start lite-kit for the reset; after Task 5, stop lite-kit and start dnsmasq on the same address.
+The firewall passes were installed in Task 2. This step checks the view again now that NTP is listening.
 
-**[USER SHELL]** — Reservation and firewall are OPNsense UI steps. dnsmasq runs on silverstone.
-
-- [ ] **Step 1: start dnsmasq on silverstone after lite-kit has released port 53.** The names below were verified 2026-11-09 against `stacks/yandex-station/https-proxy/domains/yandex.txt`. `quasar:31120` is the proxy's upstream directive and is not a DNS name. `!` lines (`*.s3.yandex.net`, `*.svc.cdn.yandex.net`, `*.strm.yandex.net`) are exclusions and are not hijacked. Write one `address=/<fqdn>/192.168.1.10` line per FQDN in this table, plus `filter-AAAA` and `server=<silverstone default gateway>`:
-
-| FQDN (A record → `192.168.1.10`) |
-|---|
-| `quasar.yandex.net` |
-| `quasar.yandex.ru` |
-| `scbh.yandex.net` |
-| `ntp.yantp.net` |
-| `rpc.alice.yandex.net` |
-| `uniproxy.alice.yandex.net` |
-| `uniproxy-quic.alice.yandex.net` |
-| `login.yandex.ru` |
-| `oauth.yandex.ru` |
-| `push.yandex.ru` |
-| `clck.yandex.net` |
-| `mobileproxy.passport.yandex.net` |
-| `mobileproxy.yango.com` |
-| `login.yasmina.yango.com` |
-| `oauth.yasmina.yango.com` |
-| `push.yasmina.yango.com` |
-| `quasar.yasmina.yango.com` |
-| `rpc.yasmina.yango.com` |
-| `login.yasmina.funtechservices.com` |
-| `oauth.yasmina.funtechservices.com` |
-| `quasar.yasmina.funtechservices.com` |
-| `clck.yasmina.yango.com` |
-| `report.appmetrica.yandex.net` |
-| `tracking.appmetrica.yandex.net` |
-| `rosenberg.appmetrica.yandex.net` |
-| `zen.report.appmetrica.yandex.net` |
-| `redirect.appmetrica.yandex.com` |
-| `startup.appmetrica.yango.com` |
-| `startup.mobile.yandex.net` |
-| `analytics.mobile.yandex.net` |
-| `certificate.mobile.yandex.net` |
-| `api.lbs.yandex.net` |
-| `ws.api.music.yandex.net` |
-
-Verify from the workstation:
+- [ ] **Step 1: dig from a host on `192.168.99.0/24`, and once from a LAN host:**
 
 ```bash
-dig @192.168.1.10 quasar.yandex.net A +short
-dig @192.168.1.10 quasar.yandex.net AAAA +short
-dig @192.168.1.10 ntp.yantp.net A +short
-GW=$(ssh silverstone 'ip -4 route show default | awk "{print \$3; exit}"')
-dig @"${GW}" quasar.yandex.net A +short
+dig @192.168.99.1 quasar.yandex.net A +short
+dig @192.168.99.1 quasar.yandex.net AAAA +short
+dig @192.168.99.1 ntp.yantp.net A +short
+dig @192.168.1.1 quasar.yandex.net A +short
 ```
 
-Expected: the first and third commands print `192.168.1.10`. The AAAA command prints no address. The gateway query prints a public address, or prints nothing. `192.168.1.10` from the gateway query means an Unbound override was added; remove it.
+From the same IoT host, repeat the `ntp.yantp.net` A query with `dig -6` against OPNsense's IoT IPv6 address.
 
-- [ ] **Step 2: DHCP reservation for the Midi (OPNsense UI), before the Task 0 reset** — **Services → DHCPv4 → LAN → Reservations → +**: MAC `<MIDI_MAC>`, IP `<MIDI_IP>`, hostname `yandex-midi` (optional). DNS servers for this reservation only: `192.168.1.10`. Leave the LAN-wide DNS server on OPNsense. Save, apply.
+Expected: the IoT A queries print `192.168.1.10`, including the IPv6 transport. The AAAA query prints nothing. The LAN query does not print `192.168.1.10`.
 
-- [ ] **Step 3: firewall rules** — **Firewall → Rules → LAN**, above the default LAN allow, in this order: pass source `<MIDI_IP>` to `192.168.1.10` TCP `53,80,443`; pass source `<MIDI_IP>` to `192.168.1.10` UDP `53,123`; reject source LAN net to `192.168.1.10` TCP `53,80,443`; reject source LAN net to `192.168.1.10` UDP `53,123`. Apply. No WAN forward of `53`, `80`, `443`, `123`, `2222`, or `5555`.
-
-- [ ] **Step 4: end-to-end — reset the Midi via the app and ask it a question**
-
-On the Midi's app or via voice ("Алиса, …"), ask a simple question. Expected: v3rt3p ASR (gigam) → LLM (processor) → TTS (supertonic); the station connects and `/register`/`/token` appear in `quasar-server` logs. Verify ADB still responds:
+- [ ] **Step 2: reboot the Midi, not a factory reset**
 
 ```bash
+! ssh silverstone 'adb shell reboot'
+```
+
+After it returns, ask a short question. Then:
+
+```bash
+! ssh silverstone 'adb connect <MIDI_IP>:5555
 adb shell id
+docker logs v3rt3p-quasar-server | tail -20'
 ```
 
-Expected: `uid=0(root)` (Phase 1 lock-in survived).
+Expected: `uid=0(root)` still. quasar-server shows the station connecting. A button factory reset here would wipe `/data` and drop root. If the local backend cannot be reached without that wipe, stop and repeat Tasks 3–5 on purpose with lite-kit listening on `:80/:443` again. Leave the view in place.
 
 ---
 
-## Task 7: Post-deploy cleanup & recording
+## Task 8: Record the result
 
-- [ ] **Step 1: record the verified layout** — `<MIDI_IP>`, firmware `<FIRMWARE_BUILD>`, `<GIGAAM_DEVICE>`, `<TTS_VOICE>`, the dnsmasq hijack list, and the four firewall rules, into a notes file under `/mnt/spool/apps/config/yandex-station/`.
+- [ ] **Step 1:** write `<MIDI_IP>`, `<FIRMWARE_BUILD>`, `<GIGAAM_DEVICE>`, `<TTS_VOICE>`, and the firewall rules into `/mnt/spool/apps/config/yandex-station/`. Do not copy device keys, `devices.json`, or the Wi-Fi password into git.
 
-- [ ] **Step 2: optional SSH hardening** — add `/root/.ssh/authorized_keys` on the Midi and drop the Dropbear `-B` flag so root login is key-only (see spec §5.6).
-
-- [ ] **Step 3: note the remaining follow-ups** from the spec (§10): GigaAM on CUDA, `processor` function/state/MCP servers and home-functions, full cloud detach (Tier 2), the pending upstream v3rt3p/https-proxy#3 (`SSL_KEYLOG` build ARG — if merged, bump the submodule pin so images retag), and the `supertonic-tts` attribution issue (MIT `helper.js` copied without notice; weights are OpenRAIL and pulled from HF by the deployer, not shipped in images).
+- [ ] **Step 2:** follow-ups from spec §10 stay out of this procedure: CUDA GigaAM, processor tools, Tier 2 egress blocking, key-only SSH, and the upstream https-proxy / supertonic attribution items.
 
 ---
 
 ## Rollback
 
-- **OPNsense:** delete the four LAN rules and remove DNS `192.168.1.10` from the Midi reservation. Unbound was not given Yandex overrides.
-- **silverstone:** `docker compose -f stacks/yandex-station.yaml down` (keep the branch to revert). Stop lite-kit and the dnsmasq container.
-- **Midi:** a factory reset wipes `/data` and cannot revert firmware. If a build cannot be brought under control, the reset path is the only documented escape and is irreversible at the firmware layer.
-- **Leak:** never publish `/data/quasar/devices.json`, device keys, MAC, serial, or Wi-Fi password.
+- **OPNsense:** delete `/usr/local/etc/unbound.opnsense.d/yandex-iot.conf`, restart Unbound, and delete the Task 2 passes. Host Overrides were not given Yandex names. IoT DHCP DNS was already `192.168.99.1`.
+- **silverstone:** `docker compose -f /home/salekseev/src/github.com/salekseev/stacks/stacks/yandex-station.yaml --env-file /mnt/spool/apps/config/yandex-station/v3rt3p/.env down`. Stop lite-kit if it is still up.
+- **Midi:** a factory reset wipes `/data` and cannot revert firmware.

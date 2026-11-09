@@ -2,16 +2,24 @@
 #
 # Yandex Station self-hosted backend (v3rt3p). Impersonates Yandex cloud so the
 # rooted Midi resolves quasar.yandex.net/.ru, scbh.yandex.net, ntp.yantp.net, etc.
-# to silverstone:80/:443 (+ udp/123 NTP). Trust is via the eMudhra intermediate CA
-# shipped by https-proxy (the station trusts it out of the box — see spec §5.5).
-# LAN-only exposure: OPNsense firewall scopes :80/:443/udp/123 to the Midi IP.
+# to silverstone:80/:443 (+ udp/123 NTP). DNS is not in this file. OPNsense
+# Unbound on IoT (opt1, VLAN 99, ix2_vlan99, 192.168.99.0/24) answers the
+# hijack list from stacks/yandex-station/unbound-iot-view.conf. LAN keeps
+# public DNS. Trust is via the eMudhra intermediate CA shipped by https-proxy
+# (subject CN=EM EV TLS CA - G3C; the pinned key's scalar is 56 and it matches
+# ca.crt — see spec §5.5). Sockets bind 192.168.1.10 so the Tailscale address
+# is not a listener. Start this file only after lite-kit has released :80 and :443.
 #
 # Secrets are interpolated from the host env file at deploy time:
 #   docker compose -f stacks/yandex-station.yaml --env-file \
-#     /mnt/spool/apps/config/yandex-station/v3rt3p/.env up -d --build
+#     /mnt/spool/apps/config/yandex-station/v3rt3p/.env up -d
 # (compose does NOT auto-read the config-dir .env; the flag is required).
+# `up -d` pulls the five ghcr images. Append `--build` only for an air-gap
+# rebuild from the vendored submodules. Install the Unbound view before the
+# button reset; this file does not render it.
 #
-# Build contexts are vendored git submodules under stacks/yandex-station/.
+# Build contexts are five vendored git submodules under stacks/yandex-station/.
+# postgres and ntp-server are registry images.
 # Design: docs/superpowers/specs/2026-11-08-yandex-station-midi-self-host-design.md
 # Plan:   docs/superpowers/plans/2026-11-08-yandex-station-midi-self-host.md
 
@@ -29,7 +37,7 @@ services:
     container_name: v3rt3p-https-proxy
     restart: unless-stopped
     ports:
-      - "192.168.1.10:80:80"    # host-IP binding per plex.yaml/scrypted.yaml precedent
+      - "192.168.1.10:80:80"    # address-bound; host mode would also listen on Tailscale
       - "192.168.1.10:443:443"
     environment:
       YANDEX_UPSTREAM_URL: http://quasar-server:31115
@@ -53,7 +61,7 @@ services:
       STT_GIGAAM_URL: ws://quasistreaming-gigam:8080
       POSTGRES_URL: postgres://quasar:${POSTGRES_PASSWORD:-change-me}@postgres:5432/quasar
     ports:
-      - "192.168.1.10:31116:31116"   # external API port for controlling the speakers
+      - "192.168.1.10:31116:31116"   # speaker control API; IoT firewall pass covers it with :80/:443
     depends_on:
       - postgres
       - processor
@@ -95,7 +103,7 @@ services:
     container_name: v3rt3p-tts
     restart: unless-stopped
     environment:
-      ASSETS_PATH: /assets      # image default is /app/assets; assets = unzipped supertonic-tts-model.zip
+      ASSETS_PATH: /assets      # image default is /app/assets; mount is the HF supertonic-3 tree (onnx/ + voice_styles/)
     volumes:
       - /mnt/spool/apps/config/yandex-station/v3rt3p/supertonic-tts-assets:/assets:ro
 
@@ -121,8 +129,9 @@ services:
       - /mnt/spool/apps/config/yandex-station/v3rt3p/prompts/prompt-state.handlebars:/prompt-state.handlebars:ro
       - /mnt/spool/apps/config/yandex-station/v3rt3p/prompts/prompt-functions.handlebars:/prompt-functions.handlebars:ro
 
-  # Optional but required for reset: NTP server (public image).
-  # ntp.yantp.net must resolve here (A-only, no AAAA) — OPNsense override.
+  # Required for the local backend. ntp.yantp.net is an A record in the IoT
+  # Unbound view, not a host override. UDP/123 does not overlap lite-kit.
+  # This service starts with the rest of the stack after lite-kit stops.
   ntp-server:
     image: cturra/ntp:latest
     container_name: v3rt3p-ntp
