@@ -68,8 +68,11 @@ services:
       - quasistreaming-gigam
       - supertonic-tts
 
+  # Stock Postgres 18, same major as hindsight. Not the vchord image.
+  # Official 18 mounts the data volume at /var/lib/postgresql. The directory
+  # must be empty on first start. A postgres:17 data directory cannot be mounted here.
   postgres:
-    image: postgres:17
+    image: postgres:18
     container_name: v3rt3p-postgres
     restart: unless-stopped
     environment:
@@ -77,7 +80,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
       POSTGRES_DB: quasar
     volumes:
-      - /mnt/spool/apps/data/yandex-station/v3rt3p/postgres-data:/var/lib/postgresql/data
+      - /mnt/spool/apps/data/yandex-station/v3rt3p/postgres-data:/var/lib/postgresql
 
   # ASR: GigaAM. Models self-download into the persistent cache below (do NOT
   # pre-copy legacy ONNX files — upstream README). Default CPU; GIGAAM_DEVICE=cuda
