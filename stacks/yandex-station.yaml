@@ -1,0 +1,160 @@
+# $schema: https://raw.githubusercontent.com/compose-spec/compose-spec/refs/heads/main/schema/compose-spec.json
+#
+# Yandex Station self-hosted backend (v3rt3p). The speaker reaches this stack
+# on the IoT VLAN. https-proxy holds SPEAKER_IP (TCP 80 and 443). quasar-server
+# shares that network namespace so the control API on TCP 31116 is the same
+# address. ntp-server holds NTP_IP (UDP 123). Host Overrides must agree:
+# the HTTPS names and ntp.yantp.net are separate addresses.
+#
+# ipvlan L2 parent is the host VLAN 99 interface (IOT_PARENT). The container
+# addresses are not host ports, so the TrueNAS UI can keep *:80 and *:443.
+# postgres, processor, quasistreaming-gigam, and supertonic-tts stay on the
+# stack network. https-proxy is on both, and quasar-server uses that namespace,
+# so those service names still resolve.
+#
+# Required in the env file: IOT_PARENT, SPEAKER_IP, NTP_IP.
+#   docker compose -f stacks/yandex-station.yaml --env-file \
+#     /mnt/spool/apps/config/yandex-station/v3rt3p/.env up -d
+# (compose does NOT auto-read the config-dir .env; the flag is required).
+# `up -d` pulls the five ghcr images. Append `--build` only for an air-gap
+# rebuild from the vendored submodules.
+#
+# Build contexts are five vendored git submodules under stacks/yandex-station/.
+# postgres and ntp-server are registry images.
+# Design: docs/superpowers/specs/2026-11-08-yandex-station-midi-self-host-design.md
+# Plan:   docs/superpowers/plans/2026-11-08-yandex-station-midi-self-host.md
+
+services:
+  # Public entry: NGINX on :80/:443, eMudhra CA, per-domain P-384 certs at runtime.
+  # YANDEX_UPSTREAM_URL overrides the first line of domains/yandex.txt (generate.sh
+  # "<LIST>_UPSTREAM_URL" contract). quasar-server listens in this namespace.
+  https-proxy:
+    # image tag == short SHA of the submodule pin (built+pushed public by
+    # .github/workflows/v3rt3p-images.yml); bump both together. `up -d` pulls;
+    # `up -d --build` rebuilds from the vendored submodule (air-gap fallback).
+    image: ghcr.io/salekseev/v3rt3p-https-proxy:b4dc462
+    build:
+      context: ./yandex-station/https-proxy
+    container_name: v3rt3p-https-proxy
+    restart: unless-stopped
+    environment:
+      YANDEX_UPSTREAM_URL: http://127.0.0.1:31115
+    networks:
+      default: {}
+      iot:
+        ipv4_address: ${SPEAKER_IP:?set SPEAKER_IP}
+
+  # Main "maind" protocol server (Quasar backend emulator).
+  # Shares https-proxy's namespace: 31115 and 31116 are on SPEAKER_IP.
+  quasar-server:
+    image: ghcr.io/salekseev/v3rt3p-quasar-server:fefcd58
+    build:
+      context: ./yandex-station/quasar-server
+    container_name: v3rt3p-quasar-server
+    restart: unless-stopped
+    network_mode: service:https-proxy
+    environment:
+      ALLOW_UPDATES: "true"
+      PORT: "31115"
+      API_PORT: "31116"
+      TTS_OPENAI_BASE_URL: http://supertonic-tts:9150
+      TTS_OPENAI_VOICE: "${TTS_VOICE:-F1}"          # supertonic voices: M1–M5, F1–F5
+      PROCESSOR_BASIC_URL: http://processor:8080    # base URL; processor appends its route
+      STT_GIGAAM_URL: ws://quasistreaming-gigam:8080
+      POSTGRES_URL: postgres://quasar:${POSTGRES_PASSWORD:-change-me}@postgres:5432/quasar
+    depends_on:
+      - https-proxy
+      - postgres
+      - processor
+      - quasistreaming-gigam
+      - supertonic-tts
+
+  # Stock Postgres 18, same major as hindsight. Not the vchord image.
+  # Official 18 mounts the data volume at /var/lib/postgresql. The directory
+  # must be empty on first start. A postgres:17 data directory cannot be mounted here.
+  postgres:
+    image: postgres:18
+    container_name: v3rt3p-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: quasar
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: quasar
+    volumes:
+      - /mnt/spool/apps/data/yandex-station/v3rt3p/postgres-data:/var/lib/postgresql
+
+  # ASR: GigaAM. Models self-download into the persistent cache below (do NOT
+  # pre-copy legacy ONNX files — upstream README). Default CPU; GIGAAM_DEVICE=cuda
+  # offloads to GPU (needs NVIDIA driver + Container Toolkit).
+  quasistreaming-gigam:
+    image: ghcr.io/salekseev/v3rt3p-quasistreaming-gigam:e1770f1   # CPU variant
+    build:
+      context: ./yandex-station/quasistreaming-gigam
+      dockerfile: "${GIGAAM_DOCKERFILE:-Dockerfile.cpu}"
+    container_name: v3rt3p-gigam
+    restart: unless-stopped
+    environment:
+      GIGAAM_DEVICE: "${GIGAAM_DEVICE:-cpu}"        # cpu | cuda
+      GIGAAM_DOWNLOAD_ROOT: /app/.cache/gigaam
+    volumes:
+      - /mnt/spool/apps/data/yandex-station/v3rt3p/gigaam-cache:/app/.cache/gigaam
+
+  # TTS: self-hosted OpenAI-compatible service (Supertonic assets mounted RO).
+  supertonic-tts:
+    image: ghcr.io/salekseev/v3rt3p-supertonic-tts:d0a6449
+    build:
+      context: ./yandex-station/supertonic-tts
+    container_name: v3rt3p-tts
+    restart: unless-stopped
+    environment:
+      ASSETS_PATH: /assets      # image default is /app/assets; mount is the HF supertonic-3 tree (onnx/ + voice_styles/)
+    volumes:
+      - /mnt/spool/apps/config/yandex-station/v3rt3p/supertonic-tts-assets:/assets:ro
+
+  # Brain: builds prompts, calls the cloud OpenAI-compatible LLM.
+  # Template env names are per processor/src/environment.ts (no PROCESSOR_ prefix
+  # on the template paths).
+  processor:
+    image: ghcr.io/salekseev/v3rt3p-processor:6129628
+    build:
+      context: ./yandex-station/processor
+    container_name: v3rt3p-processor
+    restart: unless-stopped
+    environment:
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://openrouter.ai/api/v1}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL}
+      PROMPT_TEMPLATE_PATH: /prompt.handlebars
+      STATE_PROMPT_TEMPLATE_PATH: /prompt-state.handlebars
+      FUNCTIONS_PROMPT_TEMPLATE_PATH: /prompt-functions.handlebars
+      CACHE_SIZE: "1000"
+    volumes:
+      - /mnt/spool/apps/config/yandex-station/v3rt3p/prompts/prompt.handlebars:/prompt.handlebars:ro
+      - /mnt/spool/apps/config/yandex-station/v3rt3p/prompts/prompt-state.handlebars:/prompt-state.handlebars:ro
+      - /mnt/spool/apps/config/yandex-station/v3rt3p/prompts/prompt-functions.handlebars:/prompt-functions.handlebars:ro
+
+  # ntp.yantp.net is its own Host Override, so this address is not SPEAKER_IP.
+  ntp-server:
+    image: cturra/ntp:latest
+    container_name: v3rt3p-ntp
+    restart: unless-stopped
+    environment:
+      NTP_SERVERS: time1.google.com,time2.google.com,time.cloudflare.com
+    networks:
+      iot:
+        ipv4_address: ${NTP_IP:?set NTP_IP}
+
+  # Healthchecks omitted by default (upstream images ship no proven probes for
+  # these builds); add per service once a readiness signal is evidenced — the
+  # real trust check is TLS to https://quasar.yandex.net on :443.
+
+networks:
+  iot:
+    driver: ipvlan
+    driver_opts:
+      parent: ${IOT_PARENT:?set IOT_PARENT to the VLAN 99 interface}
+      ipvlan_mode: l2
+    ipam:
+      config:
+        - subnet: 192.168.99.0/24
+          gateway: 192.168.99.1
