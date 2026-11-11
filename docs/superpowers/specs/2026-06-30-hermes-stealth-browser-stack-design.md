@@ -125,12 +125,12 @@ The redf0x1 procedure — reset sessions, create exactly one tab, `POST toggle-d
 - *Cloudflare browser-rendered VNC* (raw `tcp://camofox:5900`): no clipboard support. Rolled back.
 - *xrdp sidecar for Cloudflare browser RDP*: rendered correctly in a throwaway test, but clipboard
   sync was inconclusive and xrdp's VNC bridge is ISO-8859-1 only. Not pursued.
-- *Occamy* (`ghcr.io/changkun/occamy`, beta): current. It dials `camofox:5900` with the VNC
-  password from its own env and syncs the browser's clipboard natively.
+- *Occamy* (`ghcr.io/changkun/occamy`, beta): current. It runs in camofox's network namespace,
+  dials x11vnc on loopback with no VNC password, and syncs the browser's clipboard natively.
 
 1. Open `https://hermes-browser.alekseev.us/static/` (`/` is a 404). The shared hermes Access app
    authenticates you at the edge. Occamy then signs you in through its own Cloudflare Access SaaS
-   OIDC app, which reuses the same Cloudflare session. Open **Hermes browser**; no VNC password
+   OIDC app, which reuses the same Cloudflare session. Open **Hermes browser**; there is no VNC password
    prompt.
 2. Log in by hand — MFA, CAPTCHAs, consent banners. Copy and paste work through the browser
    clipboard (Chrome/Edge ask permission once). VNC clipboard text is Latin-1 only.
@@ -153,12 +153,13 @@ state and the configured ports.
   Tested on silverstone with throwaway containers: before the fix, stop took 10 s and exited 137;
   after, it exited 0 with `storage state persisted … reason: shutdown`.
 
-**Security note:** anyone who reaches `camofox:5900` *and* knows the VNC password has full
-interactive control of a browser logged into your accounts. Nothing is published to the host.
-Only hermes-net containers can reach `:5900`; before 2026-11-11 any of them could do so without a
-password. Browsers reach it only through Occamy, which needs both Cloudflare Access and Occamy's
-OIDC sign-in. Occamy's allow list then admits only `HERMES_BROWSER_USER`. `VIEW_ONLY` stays unset because hands-on login
-is the point.
+**Security note:** x11vnc gives full interactive control of a browser logged into your accounts.
+It listens on `127.0.0.1:5900` with no password, inside camofox's network namespace. Occamy is the
+only other container there (`network_mode: service:camofox`). Nothing is published to the host,
+and the rest of hermes-net gets connection refused on `:5900`. Before 2026-11-11 any hermes-net
+container could reach it with no password. Browsers reach it only through Occamy, which needs both
+Cloudflare Access and Occamy's OIDC sign-in, and Occamy's allow list admits only
+`HERMES_BROWSER_USER`. `VIEW_ONLY` stays unset because hands-on login is the point.
 
 ### Hermes memory-pressure banner is a HOST reading (2026-09-02)
 
