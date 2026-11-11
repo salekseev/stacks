@@ -4,7 +4,7 @@
 - **Branch:** `hermes-stealth-browser-stack`
 - **Status:** Deployed 2026-06-30 — agent↔camofox path verified; Cloudflare Access + noVNC login-handoff pending
 - **Superseded (UI/agent-runtime topology):** by `2026-06-30-hermes-gateway-openwebui-port-design.md` — the `hermes-webui` + `hermes-agent-src` in-process topology is replaced by `hermes gateway run` (API :8642 + dashboard :9119) + Open WebUI. Camofox / noVNC / cloudflared sections below still apply.
-- **Superseded (viewer):** 2026-11-11, noVNC → Cloudflare browser-rendered VNC; see the login-handoff runbook.
+- **Viewer:** noVNC, now password-protected. Cloudflare browser-rendered VNC was tried on 2026-11-11 and rolled back; see the login-handoff runbook.
 - **Stack file (to be created):** `stacks/hermes.yaml`
 - **Author:** brainstormed with Claude Code (ultracode)
 
@@ -115,15 +115,20 @@ Hermes-side gateway variables are unchanged and all still valid: `CAMOFOX_URL`, 
 treats `CAMOFOX_USER_ID` as a managed identity and only falls back to an ephemeral
 `hermes_<uuid>` userId (`:409-411`) when no override exists. Persistence keys on `CAMOFOX_USER_ID`.
 
-### Login-handoff runbook (Cloudflare browser-rendered VNC, 2026-11-11)
+### Login-handoff runbook (noVNC, 2026-11-11)
 
 The redf0x1 procedure — reset sessions, create exactly one tab, `POST toggle-display`, check for a
 `vncUrl` — **no longer applies and must not be used.** jo-inc has no `toggle-display` endpoint.
-The noVNC viewer (`/vnc.html` on `:6080`) is retired too: websockify now binds loopback only.
 
-1. Open `https://hermes-browser.alekseev.us`. Cloudflare Access (its own self-hosted app with
-   browser rendering = VNC) authenticates you, then prompts for the VNC password
-   (`CAMOFOX_VNC_PASSWORD`; classic VNC auth, first 8 characters only).
+Cloudflare browser-rendered VNC (raw `tcp://camofox:5900` behind its own Access app) was deployed
+and rolled back the same day: it has no clipboard support. An xrdp sidecar for Cloudflare's
+browser RDP, which does have clipboard controls, rendered the browser correctly in a throwaway test.
+Clipboard sync was inconclusive there, and xrdp's VNC bridge is ISO-8859-1 text only. Not pursued.
+
+1. Open `https://hermes-browser.alekseev.us/vnc.html?autoconnect=true&resize=scale`. Cloudflare
+   Access (the shared hermes app) authenticates you, then noVNC prompts for the VNC password
+   (`CAMOFOX_VNC_PASSWORD`; classic VNC auth, first 8 characters only). Clipboard goes through
+   noVNC's side-panel text box.
 2. Log in by hand — MFA, CAPTCHAs, consent banners.
 3. Nothing else. Storage state (cookies, localStorage, IndexedDB) for the `operator` profile is
    checkpointed every 10 min by `camofox-checkpoint` and on every graceful stop; the agent adopts
@@ -144,10 +149,11 @@ state and the configured ports.
   Tested on silverstone with throwaway containers: before the fix, stop took 10 s and exited 137;
   after, it exited 0 with `storage state persisted … reason: shutdown`.
 
-**Security note:** anyone who reaches `camofox:5900` *and* knows the VNC password has full
-interactive control of a browser logged into your accounts. Nothing is published to the host; on
-the network only cloudflared and the other hermes-net containers can reach it, and before this
-change any of them could do so without a password. `VIEW_ONLY` stays unset because hands-on login
+**Security note:** anyone who reaches `camofox:6080` *and* knows the VNC password has full
+interactive control of a browser logged into your accounts. Nothing is published to the host, and
+raw x11vnc `:5900` stays on loopback. On the network, only cloudflared (behind Cloudflare Access) and
+the other hermes-net containers can reach `:6080`. Before 2026-11-11 any of them could do so
+without a password. `VIEW_ONLY` stays unset because hands-on login
 is the point.
 
 ### Hermes memory-pressure banner is a HOST reading (2026-09-02)

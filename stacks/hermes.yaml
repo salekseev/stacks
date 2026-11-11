@@ -6,7 +6,7 @@
 #   Portainer stack env vars (cross-container — must be set in Portainer UI):
 #     CAMOFOX_SHARED_KEY    - camofox REST bearer (shared between camofox and hermes-gateway)
 #     HERMES_API_SERVER_KEY - bearer for the gateway OpenAI API :8642 (== Open WebUI OPENAI_API_KEY); >=8 chars
-#     CAMOFOX_VNC_PASSWORD  - x11vnc password for the Cloudflare browser-rendered VNC viewer
+#     CAMOFOX_VNC_PASSWORD  - x11vnc password, entered in the noVNC viewer
 #                             (classic VNC auth: only the first 8 characters are significant)
 #   Hardcoded in compose (non-secret):
 #     HERMES_TUNNEL_ID = 0a0fe09f-7724-4e7e-9ad8-0326b70fa07f (Cloudflare tunnel UUID, inline below)
@@ -17,8 +17,7 @@
 #     HERMES_DASHBOARD_OIDC_CLIENT_SECRET - CF Access SaaS-OIDC client secret
 #     HINDSIGHT_API_KEY                 - Hindsight tenant key (== server HINDSIGHT_API_TENANT_API_KEY)
 #     OP_SERVICE_ACCOUNT_TOKEN          - 1Password service account (scoped read-only to hermes vault)
-# Nothing published to host; only cloudflared reaches origins, gated by Cloudflare Access (one shared
-# app for hermes; a separate browser-rendered VNC app for hermes-browser).
+# Nothing published to host; only cloudflared reaches origins, gated by one Cloudflare Access app.
 
 services:
 
@@ -76,15 +75,16 @@ services:
       # CAMOFOX_AUTH_MODE is NOT a jo-inc variable (fork-only) — dropped, not renamed. On jo-inc,
       # "auth required" is expressed by setting CAMOFOX_ACCESS_KEY.
       - CAMOFOX_PROFILE_DIR=/home/node/.camofox/profiles   # jo-inc name; was CAMOFOX_PROFILES_DIR
-      # --- interactive viewer: raw VNC for Cloudflare browser-rendered VNC (no noVNC) ---
+      # --- interactive viewer: noVNC over HTTP (Cloudflare browser-rendered VNC was tried 2026-11-11
+      #     and rolled back: it has no clipboard support) ---
       - ENABLE_VNC=1
-      # cloudflared reaches x11vnc directly (tcp://camofox:5900). The watcher refuses a non-loopback
-      # RFB bind without a password (vnc-watcher-lib.sh x11vnc_listen_args), and the password also
-      # gates every other container on hermes-net, which previously had passwordless control.
-      - VNC_RFB_BIND=0.0.0.0
+      - VNC_BIND=0.0.0.0                 # REQUIRED: the watcher defaults websockify to 127.0.0.1
+                                         # (plugins/vnc/vnc-watcher.sh), which cloudflared cannot reach.
+      - NOVNC_PORT=6080                  # hermes-browser ingress target
+      # VNC_RFB_BIND left unset: raw x11vnc :5900 stays on loopback; websockify proxies to it locally.
+      # The password still matters: noVNC on 0.0.0.0:6080 is reachable by every container on
+      # hermes-net, which previously had passwordless control of the logged-in browser.
       - VNC_PASSWORD=${CAMOFOX_VNC_PASSWORD}
-      # VNC_BIND deliberately unset: the watcher always starts websockify/noVNC, and unset keeps it on
-      # 127.0.0.1:6080, unreachable from cloudflared. noVNC is retired.
       - VNC_RESOLUTION=1920x1080x24
       # VIEW_ONLY must stay unset — the whole point is hands-on login.
       # --- keep the browser, its Xvfb display and the operator session alive ---
@@ -308,7 +308,7 @@ configs:
       tunnel: 0a0fe09f-7724-4e7e-9ad8-0326b70fa07f
       credentials-file: /etc/cloudflared/creds/tunnel.json
       ingress:
-        # Origin-side Cloudflare Access JWT validation for the HTTP host(s) on the shared Access app /
+        # Origin-side Cloudflare Access JWT validation. hermes + hermes-browser share ONE Access app /
         # audTag (team alekseev); cloudflared verifies Cf-Access-Jwt-Assertion against the team
         # JWKS + audTag before proxying.
         - hostname: hermes.alekseev.us
@@ -321,13 +321,14 @@ configs:
         - hostname: hermes-dashboard.alekseev.us
           service: http://hermes-gateway:9119
           # OIDC-only: the dashboard's own Cloudflare-Access-OIDC gate is the sole auth. No edge Access.
-          # (hermes above keeps its edge `access:` block.)
+          # (hermes + hermes-browser keep their edge `access:` blocks.)
         - hostname: hermes-browser.alekseev.us
-          # Raw VNC for Cloudflare's browser-rendered VNC. Gated by its OWN self-hosted Access app
-          # (browser rendering = VNC, Allow policy) — not the shared hermes app above. No origin
-          # `access:` block: that validates the Cf-Access-Jwt-Assertion HTTP header, which a
-          # browser-rendered TCP session does not carry. Second factor: x11vnc VNC_PASSWORD.
-          service: tcp://camofox:5900
+          service: http://camofox:6080
+          access:
+            required: true
+            teamName: alekseev
+            audTag:
+              - f79eba4208644c03e8777ab7870842bc46887458b09d3ad19e74570b119bc37d
         - service: http_status:404
 
 volumes:
