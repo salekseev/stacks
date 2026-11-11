@@ -9,7 +9,8 @@
 #     OCCAMY_OIDC_ISSUER        - CF Access Generic OIDC SaaS issuer for Occamy, exactly as its
 #                                 .well-known/openid-configuration names it (.../sso/oidc/<app-id>)
 #     OCCAMY_OIDC_CLIENT_ID     - that SaaS app's client id
-#     HERMES_BROWSER_USER       - the Cloudflare Access login email allowed to open the browser
+#     HERMES_BROWSER_USER       - Cloudflare Access user id (OIDC `sub`) allowed to open the browser;
+#                                 Occamy logs it when it refuses an unknown user
 #   (Not secrets — env vars only to keep them out of this public repo. Occamy refuses to start if
 #   HERMES_BROWSER_USER is empty: require_known_users then admits no one.)
 #   On-disk host file (secret; owner 65532, mode 0400):
@@ -351,9 +352,11 @@ configs:
           redirect_url: https://hermes-browser.alekseev.us/api/v1/auth/oidc/callback
           return_urls:
             - https://hermes-browser.alekseev.us/static/
-          # Allow lists name the user by verified email. Occamy then requires email_verified: true
-          # in the ID token; if Cloudflare omits it, sign-in fails access_denied — switch to `sub`.
-          subject_claim: email
+          # `sub` (Cloudflare's per-account user id), not `email`: Occamy accepts `email` only with
+          # email_verified: true, which Cloudflare Access OIDC does not send. Verified live
+          # 2026-11-11: "the provider has not verified the email address". The sub changes if the
+          # user is removed and re-added to the Zero Trust org; update HERMES_BROWSER_USER then.
+          subject_claim: sub
           require_known_users: true
       connections:
         - id: hermes-browser
