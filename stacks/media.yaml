@@ -232,46 +232,52 @@ configs:
       ingress:
         - hostname: prowlarr.alekseev.us
           service: http://prowlarr:9696
-          access:
-            required: true
-            teamName: alekseev
-            audTag:
-              - 28301c1e32ae3464a9017afc913e4770a0092631d412ad8144395add357c87c5
+          originRequest:
+            access:
+              required: true
+              teamName: alekseev
+              audTag:
+                - 28301c1e32ae3464a9017afc913e4770a0092631d412ad8144395add357c87c5
         - hostname: radarr.alekseev.us
           service: http://radarr:7878
-          access:
-            required: true
-            teamName: alekseev
-            audTag:
-              - 6907f3d06f86c26e1fb7b26b75470ac1aa3f8b6cd60ba8df7b370fe8406669e9
+          originRequest:
+            access:
+              required: true
+              teamName: alekseev
+              audTag:
+                - 6907f3d06f86c26e1fb7b26b75470ac1aa3f8b6cd60ba8df7b370fe8406669e9
         - hostname: requests.alekseev.us
           service: http://seerr:5055
-          access:
-            required: true
-            teamName: alekseev
-            audTag:
-              - 0e925b5bb58ca5fa143e64d07d597d6151b157a1e9940228cad53de83b984666
+          originRequest:
+            access:
+              required: true
+              teamName: alekseev
+              audTag:
+                - 0e925b5bb58ca5fa143e64d07d597d6151b157a1e9940228cad53de83b984666
         - hostname: sonarr.alekseev.us
           service: http://sonarr:8989
-          access:
-            required: true
-            teamName: alekseev
-            audTag:
-              - 00d9b88538ea4d3f73429e864dc9a163ae0199d6224fb1c2550de2c869f9885d
+          originRequest:
+            access:
+              required: true
+              teamName: alekseev
+              audTag:
+                - 00d9b88538ea4d3f73429e864dc9a163ae0199d6224fb1c2550de2c869f9885d
         - hostname: sabnzbd.alekseev.us
           service: http://sabnzbd:8080
-          access:
-            required: true
-            teamName: alekseev
-            audTag:
-              - 42bf6be4522ccc467f7ec8b00e8cf3210ebf38282a1587ec215681555f76a7e3
+          originRequest:
+            access:
+              required: true
+              teamName: alekseev
+              audTag:
+                - 42bf6be4522ccc467f7ec8b00e8cf3210ebf38282a1587ec215681555f76a7e3
         - hostname: qbittorrent.alekseev.us
           service: http://qbittorrent:8080
-          access:
-            required: true
-            teamName: alekseev
-            audTag:
-              - fe3a5b3ffaf1bee8daaaac9d32dd54757691c92ded80e00e57855bcfa6573bb3
+          originRequest:
+            access:
+              required: true
+              teamName: alekseev
+              audTag:
+                - fe3a5b3ffaf1bee8daaaac9d32dd54757691c92ded80e00e57855bcfa6573bb3
         - hostname: qui.alekseev.us
           service: http://qui:7476
         - hostname: autobrr.alekseev.us
