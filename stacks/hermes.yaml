@@ -372,11 +372,12 @@ configs:
         # JWKS + audTag before proxying.
         - hostname: hermes.alekseev.us
           service: http://open-webui:8080
-          access:
-            required: true
-            teamName: alekseev
-            audTag:
-              - f79eba4208644c03e8777ab7870842bc46887458b09d3ad19e74570b119bc37d
+          originRequest:
+            access:
+              required: true
+              teamName: alekseev
+              audTag:
+                - f79eba4208644c03e8777ab7870842bc46887458b09d3ad19e74570b119bc37d
         - hostname: hermes-dashboard.alekseev.us
           service: http://hermes-gateway:9119
           # OIDC-only: the dashboard's own Cloudflare-Access-OIDC gate is the sole auth. No edge Access.
@@ -384,11 +385,12 @@ configs:
         - hostname: hermes-browser.alekseev.us
           # Occamy web client (open /static/). Its WebSocket streams pass through cloudflared as-is.
           service: http://camofox:5636   # occamy, inside camofox's network namespace
-          access:
-            required: true
-            teamName: alekseev
-            audTag:
-              - f79eba4208644c03e8777ab7870842bc46887458b09d3ad19e74570b119bc37d
+          originRequest:
+            access:
+              required: true
+              teamName: alekseev
+              audTag:
+                - f79eba4208644c03e8777ab7870842bc46887458b09d3ad19e74570b119bc37d
         - service: http_status:404
 
 volumes:
