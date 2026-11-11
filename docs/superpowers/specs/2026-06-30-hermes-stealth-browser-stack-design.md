@@ -4,6 +4,7 @@
 - **Branch:** `hermes-stealth-browser-stack`
 - **Status:** Deployed 2026-06-30 — agent↔camofox path verified; Cloudflare Access + noVNC login-handoff pending
 - **Superseded (UI/agent-runtime topology):** by `2026-06-30-hermes-gateway-openwebui-port-design.md` — the `hermes-webui` + `hermes-agent-src` in-process topology is replaced by `hermes gateway run` (API :8642 + dashboard :9119) + Open WebUI. Camofox / noVNC / cloudflared sections below still apply.
+- **Superseded (viewer):** 2026-11-11, noVNC → Cloudflare browser-rendered VNC; see the login-handoff runbook.
 - **Stack file (to be created):** `stacks/hermes.yaml`
 - **Author:** brainstormed with Claude Code (ultracode)
 
@@ -114,26 +115,40 @@ Hermes-side gateway variables are unchanged and all still valid: `CAMOFOX_URL`, 
 treats `CAMOFOX_USER_ID` as a managed identity and only falls back to an ephemeral
 `hermes_<uuid>` userId (`:409-411`) when no override exists. Persistence keys on `CAMOFOX_USER_ID`.
 
-### noVNC login-handoff runbook (jo-inc always-on viewer)
+### Login-handoff runbook (Cloudflare browser-rendered VNC, 2026-11-11)
 
 The redf0x1 procedure — reset sessions, create exactly one tab, `POST toggle-display`, check for a
 `vncUrl` — **no longer applies and must not be used.** jo-inc has no `toggle-display` endpoint.
+The noVNC viewer (`/vnc.html` on `:6080`) is retired too: websockify now binds loopback only.
 
-1. Open `https://hermes-browser.alekseev.us/vnc.html?autoconnect=true&resize=scale`. The viewer is
-   live whenever the container is up; x11vnc runs with no password and Cloudflare Access is the
-   only gate.
+1. Open `https://hermes-browser.alekseev.us`. Cloudflare Access (its own self-hosted app with
+   browser rendering = VNC) authenticates you, then prompts for the VNC password
+   (`CAMOFOX_VNC_PASSWORD`; classic VNC auth, first 8 characters only).
 2. Log in by hand — MFA, CAPTCHAs, consent banners.
-3. Nothing else. Cookies persist to the `operator` profile under `CAMOFOX_PROFILE_DIR`, and the
-   agent adopts the same display/profile (`CAMOFOX_ADOPT_EXISTING_TAB=true`).
+3. Nothing else. Storage state (cookies, localStorage, IndexedDB) for the `operator` profile is
+   checkpointed every 10 min by `camofox-checkpoint` and on every graceful stop; the agent adopts
+   the same display/profile (`CAMOFOX_ADOPT_EXISTING_TAB=true`).
 
-You are looking at the agent's own browser, so this is safe to do mid-task: opening the viewer
-neither restarts the context nor invalidates tabs. `GET /vnc/status` (bearer-authenticated) reports
-watcher state and the configured ports.
+You are looking at the agent's own browser, so this is safe to do mid-task: connecting neither
+restarts the context nor invalidates tabs. `GET /vnc/status` (bearer-authenticated) reports watcher
+state and the configured ports.
 
-**Security note, unchanged from the fork:** anyone who reaches `:6080` has full interactive control
-of a browser logged into your accounts. Nothing is published to the host; only cloudflared reaches
-it; Cloudflare Access is the sole authentication boundary. `VIEW_ONLY` stays unset because hands-on
-login is the point.
+**Why it used to drop out and log out (diagnosed live 2026-11-11):**
+- *Viewer unavailable:* x11vnc only exists while Camoufox's Xvfb exists, and the default
+  `BROWSER_IDLE_TIMEOUT_MS` (5 min) closed the browser once no session was open. Now
+  `BROWSER_IDLE_TIMEOUT_MS=0`, `SESSION_TIMEOUT_MS=0`, `TAB_INACTIVITY_MS` = 7 days. Human VNC input
+  never resets these timers; only REST calls do.
+- *Logins lost:* the image CMD made dash (`sh -c`) PID 1, which swallowed SIGTERM, so every stop
+  was a SIGKILL after 10 s and the shutdown checkpoint never ran. The 2026-11-09 redeploy restored a
+  2026-10-23 snapshot. Now `init: true` plus a direct `node` command, and `stop_grace_period: 60s`.
+  Tested on silverstone with throwaway containers: before the fix, stop took 10 s and exited 137;
+  after, it exited 0 with `storage state persisted … reason: shutdown`.
+
+**Security note:** anyone who reaches `camofox:5900` *and* knows the VNC password has full
+interactive control of a browser logged into your accounts. Nothing is published to the host; on
+the network only cloudflared and the other hermes-net containers can reach it, and before this
+change any of them could do so without a password. `VIEW_ONLY` stays unset because hands-on login
+is the point.
 
 ### Hermes memory-pressure banner is a HOST reading (2026-09-02)
 

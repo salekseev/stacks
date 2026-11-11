@@ -6,6 +6,8 @@
 #   Portainer stack env vars (cross-container — must be set in Portainer UI):
 #     CAMOFOX_SHARED_KEY    - camofox REST bearer (shared between camofox and hermes-gateway)
 #     HERMES_API_SERVER_KEY - bearer for the gateway OpenAI API :8642 (== Open WebUI OPENAI_API_KEY); >=8 chars
+#     CAMOFOX_VNC_PASSWORD  - x11vnc password for the Cloudflare browser-rendered VNC viewer
+#                             (classic VNC auth: only the first 8 characters are significant)
 #   Hardcoded in compose (non-secret):
 #     HERMES_TUNNEL_ID = 0a0fe09f-7724-4e7e-9ad8-0326b70fa07f (Cloudflare tunnel UUID, inline below)
 #   /opt/data/.env on-disk (gateway-only secrets; written to /mnt/spool/apps/data/hermes/gateway/.env):
@@ -15,7 +17,8 @@
 #     HERMES_DASHBOARD_OIDC_CLIENT_SECRET - CF Access SaaS-OIDC client secret
 #     HINDSIGHT_API_KEY                 - Hindsight tenant key (== server HINDSIGHT_API_TENANT_API_KEY)
 #     OP_SERVICE_ACCOUNT_TOKEN          - 1Password service account (scoped read-only to hermes vault)
-# Nothing published to host; only cloudflared reaches origins, gated by one Cloudflare Access app.
+# Nothing published to host; only cloudflared reaches origins, gated by Cloudflare Access (one shared
+# app for hermes; a separate browser-rendered VNC app for hermes-browser).
 
 services:
 
@@ -37,6 +40,25 @@ services:
     image: ghcr.io/jo-inc/camofox-browser:1.18.1
     container_name: camofox
     hostname: camofox
+    # Login persistence depends on a GRACEFUL stop: the persistence plugin checkpoints storage state
+    # from gracefulShutdown() (server.js:7118-7150, on SIGTERM). The image CMD is
+    # `sh -c "node ..."`, and PID 1 is dash, which neither forwards SIGTERM nor dies from it — so
+    # every stop ran out Docker's 10 s grace, ended in SIGKILL, and saved nothing. Verified live
+    # 2026-11-11: the 2026-11-09 redeploy restored a 2026-10-23 snapshot, losing ~17 days of logins.
+    # Fix: tini as PID 1 (init) forwards SIGTERM to node, which is exec'd directly (the image's
+    # docker-entrypoint.sh ends in `exec "$@"`), and reaps Camoufox's orphaned children.
+    init: true
+    # --max-old-space-size inline: the image CMD defaults it to 128 (Dockerfile.ci:94). 128 MB OOMs
+    # the wrapper under load, which surfaces as 5xx from the REST API.
+    command: ["node", "--max-old-space-size=4096", "server.js"]
+    stop_grace_period: 60s               # room for browser close + storageState write (incl. IndexedDB)
+    configs:
+      # Replaces the image's /app/camofox.config.json verbatim except persistence.indexedDB: true.
+      # Login sites seen in the live profile (signin.ebay.com, devicebind.ebay.com, Hilton SSO) keep
+      # state in IndexedDB, which storageState() skips by default. Config-file-only — no env var.
+      - source: camofox
+        target: /app/camofox.config.json
+        mode: 0444
     environment:
       # --- server ---
       - CAMOFOX_BIND_HOST=0.0.0.0        # jo-inc name; was CAMOFOX_HOST on the fork
@@ -54,32 +76,33 @@ services:
       # CAMOFOX_AUTH_MODE is NOT a jo-inc variable (fork-only) — dropped, not renamed. On jo-inc,
       # "auth required" is expressed by setting CAMOFOX_ACCESS_KEY.
       - CAMOFOX_PROFILE_DIR=/home/node/.camofox/profiles   # jo-inc name; was CAMOFOX_PROFILES_DIR
-      # --- interactive viewer (always on, no toggle) ---
+      # --- interactive viewer: raw VNC for Cloudflare browser-rendered VNC (no noVNC) ---
       - ENABLE_VNC=1
-      - VNC_BIND=0.0.0.0                 # REQUIRED: the watcher defaults websockify to 127.0.0.1
-                                         # (plugins/vnc/vnc-watcher.sh:54), which cloudflared cannot reach.
-      - NOVNC_PORT=6080                  # keeps the existing hermes-browser ingress unchanged
+      # cloudflared reaches x11vnc directly (tcp://camofox:5900). The watcher refuses a non-loopback
+      # RFB bind without a password (vnc-watcher-lib.sh x11vnc_listen_args), and the password also
+      # gates every other container on hermes-net, which previously had passwordless control.
+      - VNC_RFB_BIND=0.0.0.0
+      - VNC_PASSWORD=${CAMOFOX_VNC_PASSWORD}
+      # VNC_BIND deliberately unset: the watcher always starts websockify/noVNC, and unset keeps it on
+      # 127.0.0.1:6080, unreachable from cloudflared. noVNC is retired.
       - VNC_RESOLUTION=1920x1080x24
-      # VNC_PASSWORD intentionally UNSET -> x11vnc runs with no password, exactly as before.
-      # Cloudflare Access on hermes-browser.alekseev.us is the ONLY gate on interactive control of
-      # a logged-in browser. Nothing is published to the host; only cloudflared reaches :6080.
       # VIEW_ONLY must stay unset — the whole point is hands-on login.
-      # --- reaper hardening (re-expressed in jo-inc variable names) ---
-      # jo-inc's defaults are TIGHTER than the fork's, so these are more important, not less:
-      #   SESSION_TIMEOUT_MS default 600000 (10 min), TAB_INACTIVITY_MS default 300000 (5 min)
-      #   — lib/config.js:114-115, versus 30 min on redf0x1.
-      - SESSION_TIMEOUT_MS=14400000      # 4 hours
-      - TAB_INACTIVITY_MS=14400000       # 4 hours
+      # --- keep the browser, its Xvfb display and the operator session alive ---
+      # x11vnc only exists while Camoufox's Xvfb exists. Defaults tore it down: BROWSER_IDLE_TIMEOUT_MS
+      # (default 300000) closes the browser 5 min after the last session ends, leaving the viewer
+      # with nothing to attach to until the agent's next call. Human VNC input never counts as
+      # activity for these timers (only REST calls do), so they must not reap under a human login.
+      - BROWSER_IDLE_TIMEOUT_MS=0        # 0 disables idle browser shutdown (lib/config.js:117-119)
+      - SESSION_TIMEOUT_MS=0             # 0 disables session expiry (server.js:6068)
+      - TAB_INACTIVITY_MS=604800000      # 7 days; 0 is NOT "off" here (`|| 300000`, lib/config.js:149)
+      # With sessions no longer expiring, the expiry-time checkpoint is gone; camofox-checkpoint
+      # below exports (= persists) storage state every 10 minutes instead.
       # No jo-inc equivalent for the fork's CAMOFOX_FAILURE_THRESHOLD: MAX_CONSECUTIVE_TIMEOUTS is a
       # hardcoded 3 (server.js:505). Acceptable — jo-inc destroys only the offending TAB
       # (destroyTab, server.js:1515-1518) instead of closing the whole browser context, so a
       # bot-walled site no longer takes the logged-in profile down with it.
       # newPageTimeoutMs (zombie-context recovery, v1.13.0) is config-file-only, not env — left at
       # its default; needs a mounted camofox.config.json to change.
-      # --- runtime ---
-      - MAX_OLD_SPACE_SIZE=4096          # image CMD defaults to --max-old-space-size=128
-                                         # (Dockerfile.ci:94). 128 MB OOMs the wrapper under load,
-                                         # which surfaces as 5xx from the REST API.
       # Crash reporting left ENABLED for the trial week — it surfaces exactly the crash/hang data
       # we are trying to characterise. Set CAMOFOX_CRASH_REPORT_ENABLED=false once the trial passes.
     volumes:
@@ -102,6 +125,32 @@ services:
       timeout: 5s
       retries: 3
       start_period: 30s
+    networks:
+      - hermes-net
+
+  camofox-checkpoint:
+    restart: unless-stopped
+    # Periodic login checkpoint. camofox persists storage state only on session close, cookie import,
+    # graceful shutdown, or an explicit export — never on a timer. With the operator session made
+    # permanent above, an OOM kill (mem_limit) or host crash would otherwise lose every login since
+    # the last start. GET /sessions/operator/storage_state emits session:storage:export, which the
+    # persistence plugin checkpoints to disk (plugins/persistence/index.js). 404 = no session yet.
+    # The route is registered by the VNC plugin, so this also depends on ENABLE_VNC=1.
+    image: curlimages/curl:8.23.0
+    container_name: camofox-checkpoint
+    depends_on:
+      camofox:
+        condition: service_healthy
+    environment:
+      - CAMOFOX_SHARED_KEY=${CAMOFOX_SHARED_KEY}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while sleep 600; do
+          curl -fsS -o /dev/null -H "Authorization: Bearer $$CAMOFOX_SHARED_KEY" \
+            http://camofox:9377/sessions/operator/storage_state \
+            || echo "checkpoint skipped (no operator session yet, or camofox unreachable)"
+        done
     networks:
       - hermes-net
 
@@ -240,12 +289,26 @@ services:
       - hermes-net
 
 configs:
+  camofox:
+    content: |
+      {
+        "id": "camofox-browser",
+        "name": "Camofox Browser",
+        "version": "1.6.0",
+        "newPageTimeoutMs": 10000,
+        "interactive": { "mode": "off" },
+        "plugins": {
+          "youtube": { "enabled": true },
+          "persistence": { "enabled": true, "indexedDB": true },
+          "vnc": { "enabled": false, "resolution": "1920x1080" }
+        }
+      }
   cloudflared:
     content: |
       tunnel: 0a0fe09f-7724-4e7e-9ad8-0326b70fa07f
       credentials-file: /etc/cloudflared/creds/tunnel.json
       ingress:
-        # Origin-side Cloudflare Access JWT validation. All three hosts share ONE Access app /
+        # Origin-side Cloudflare Access JWT validation for the HTTP host(s) on the shared Access app /
         # audTag (team alekseev); cloudflared verifies Cf-Access-Jwt-Assertion against the team
         # JWKS + audTag before proxying.
         - hostname: hermes.alekseev.us
@@ -258,14 +321,13 @@ configs:
         - hostname: hermes-dashboard.alekseev.us
           service: http://hermes-gateway:9119
           # OIDC-only: the dashboard's own Cloudflare-Access-OIDC gate is the sole auth. No edge Access.
-          # (hermes + hermes-browser below keep their edge `access:` blocks.)
+          # (hermes above keeps its edge `access:` block.)
         - hostname: hermes-browser.alekseev.us
-          service: http://camofox:6080
-          access:
-            required: true
-            teamName: alekseev
-            audTag:
-              - f79eba4208644c03e8777ab7870842bc46887458b09d3ad19e74570b119bc37d
+          # Raw VNC for Cloudflare's browser-rendered VNC. Gated by its OWN self-hosted Access app
+          # (browser rendering = VNC, Allow policy) — not the shared hermes app above. No origin
+          # `access:` block: that validates the Cf-Access-Jwt-Assertion HTTP header, which a
+          # browser-rendered TCP session does not carry. Second factor: x11vnc VNC_PASSWORD.
+          service: tcp://camofox:5900
         - service: http_status:404
 
 volumes:
