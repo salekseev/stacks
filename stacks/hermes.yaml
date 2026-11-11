@@ -141,6 +141,9 @@ services:
     # the last start. GET /sessions/operator/storage_state emits session:storage:export, which the
     # persistence plugin checkpoints to disk (plugins/persistence/index.js). 404 = no session yet.
     # The route is registered by the VNC plugin, so this also depends on ENABLE_VNC=1.
+    # Also keeps one operator tab open. camofox starts the browser with no tab, and Camoufox draws
+    # no window without one, so after every restart the viewer was blank until the agent's next
+    # browser call. The tab uses Hermes' session key (visible-tab), so the agent adopts it.
     image: curlimages/curl:8.23.0
     container_name: camofox-checkpoint
     depends_on:
@@ -151,10 +154,20 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
-        while sleep 600; do
-          curl -fsS -o /dev/null -H "Authorization: Bearer $$CAMOFOX_SHARED_KEY" \
-            http://camofox:9377/sessions/operator/storage_state \
-            || echo "checkpoint skipped (no operator session yet, or camofox unreachable)"
+        A="Authorization: Bearer $$CAMOFOX_SHARED_KEY"; U=http://camofox:9377; n=0
+        while :; do
+          case "$$(curl -fsS -H "$$A" "$$U/tabs?userId=operator")" in
+            *'"tabs":[]'*)
+              curl -fsS -o /dev/null -H "$$A" -H 'Content-Type: application/json' \
+                -d '{"userId":"operator","sessionKey":"visible-tab","url":"https://www.google.com/"}' \
+                "$$U/tabs" && echo "opened operator tab" ;;
+          esac
+          n=$$((n + 1))
+          if [ $$((n % 10)) -eq 0 ]; then
+            curl -fsS -o /dev/null -H "$$A" "$$U/sessions/operator/storage_state" \
+              || echo "checkpoint skipped (no operator session yet, or camofox unreachable)"
+          fi
+          sleep 60
         done
     networks:
       - hermes-net
@@ -193,11 +206,16 @@ services:
     # Runs once at stack start and exits 0; hermes-gateway waits on service_completed_successfully.
     # user: root required — 1password/op runs as opuser by default, which cannot write to the
     # root-owned Docker named volume on first creation.
+    # Copy-then-rename, not a plain cp: hermes-gateway runs a long-lived `op daemon` from this
+    # volume, and overwriting a running binary fails with "Text file busy" (exit 1). That happens
+    # whenever op-init reruns while a gateway is still up, e.g. on a redeploy, and blocks the
+    # gateway's start. A rename is atomic, and the running daemon keeps the old inode.
+    # Reproduced and verified live 2026-11-11.
     image: 1password/op:2.42.0
     container_name: hermes-op-init
     restart: "no"
     user: root
-    entrypoint: ["cp", "/usr/local/bin/op", "/op-bin/op"]
+    entrypoint: ["sh", "-c", "cp /usr/local/bin/op /op-bin/op.new && mv -f /op-bin/op.new /op-bin/op"]
     volumes:
       - op-bin:/op-bin
 
