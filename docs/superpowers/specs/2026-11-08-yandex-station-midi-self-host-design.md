@@ -172,7 +172,7 @@ Two trust mechanisms, one per phase:
 - **Domain scope:** OPNsense Query Forwarding sends `kinopoisk.ru`, `yandex.ru`, `strm.yandex.ru`, `ott.yandex.ru`, `yandex.net`, `yastatic.net`, and each speaker name to dnsmasq on `192.168.1.10` port `1153`. The Host Override for `ntp.yantp.net` is `192.168.99.1`. An `address=` line with only an IPv4 answer leaves AAAA empty for that name. Other names inside the parent zones recurse to `1.1.1.1`. These rows apply to every client of this Unbound. The disabled blank-domain rows and the DNS-over-TLS `.` forward stay.
 - **Firewall, for packets that ingress OPNsense.** On LAN, above the default allow: pass `192.168.1.10` to the speaker TCP `2222,5555`; reject other LAN sources to the speaker on those ports. Speaker HTTPS stays on the IoT VLAN (`SPEAKER_IP` TCP `80`, `443`, `31116`). NTP is the speaker talking to OPNsense at `192.168.99.1` UDP `123`, so there is no IoT-to-LAN pass for port `123`. No pass for port `53` to silverstone. No WAN forward of `80`, `443`, `123`, `31116`, `2222`, or `5555`.
 - **VLAN 99 crosses the firewall.** silverstone is on untagged LAN. The speaker is on VLAN 99. Packets between them ingress OPNsense, so the rules above see them. Binding to `192.168.1.10` keeps the sockets off the Tailscale address.
-- **Passwordless SSH is a hazard:** Dropbear starts with `-B` (root has an **empty password**). Never port-forward `:2222` or `:5555`. Optional later hardening: `/root/.ssh/authorized_keys` and remove `-B`.
+- **SSH is key-only.** Dropbear starts with `-s`. The public key is `contrib/etc/dropbear/authorized_keys`, copied to `/root/.ssh/authorized_keys` at boot. The private key stays in 1Password. Never port-forward `:2222` or `:5555`. ADB on `:5555` is still unauthenticated.
 - **Do not expose the silverstone ports to the WAN.** Keep the Midi off any guest or external network.
 - **Compromised-CA hygiene (§11):** do not reuse the eMudhra approach for any device outside this one; keep the proxy local; lock or remove the key-log dir if TLS key-logging is enabled.
 
@@ -251,13 +251,13 @@ A second button factory reset wipes `/data` and removes the lock-in. If the loca
 - GigaAM ASR on **CUDA** (GPU build) to offload CPU — see the v3rt3p `services/quasistreaming-gigam` guide.
 - `processor` **function/state/MCP servers** and `services/home-functions` (home automation) — the stack's extension surface.
 - Full cloud detach (Tier 2: egress block).
-- Optional SSH hardening (key-only, drop `-B`).
+- SSH is key-only (`-s`). ADB on `:5555` stays unauthenticated.
 - Upstream contributions submitted (2026-11-09): v3rt3p/https-proxy issue #2 + PR #3 — optional sslkeylog Nginx patch at build time via `ARG SSL_KEYLOG` (tested locally: `SSL_KEYLOG=false` builds in ~2 s with a byte-identical distro binary; steady-state deployments then ride distro CVE updates). If merged: bump the submodule pin and the ghcr images retag per the SHA-tag contract. Also v3rt3p/supertonic-tts issue #2 — its `src/supertonic.js` is **byte-identical** (same sha256 `073f028c…`, 559 lines, empty `diff`) to `nodejs/helper.js` from **MIT-licensed** `supertone-oss-archive/supertonic` (Copyright 2025 Supertone Inc.) with the notice stripped: asks for MIT attribution (LICENSE + source header crediting supertone-oss-archive/supertonic). The model weights are a separate matter: HF `supertone-oss-archive/supertonic-3` (the README-pinned revision) is **OpenRAIL**, not MIT — but weights are not baked into any image; the deployer downloads them from HF directly, so OpenRAIL compliance sits with the deployer (home TTS, no impersonation — comfortably in scope).
 
 ---
 
 ## 11. Security actions (out of band, not part of the stack change)
 
-- Root opens **passwordless** SSH (`-B`) and an unauthenticated network ADB on `:5555`. Neither may be port-forwarded or placed on an untrusted network. OPNsense rules in §5.6 cover traffic from LAN to the speaker and from IoT to silverstone.
+- Root SSH accepts only the key in `contrib/etc/dropbear/authorized_keys`. Network ADB on `:5555` is still unauthenticated. Neither may be port-forwarded or placed on an untrusted network. OPNsense rules in §5.6 cover traffic from LAN to the speaker and from IoT to silverstone.
 - The v3rt3p `https-proxy` **intentionally uses the known-compromised eMudhra/emSign CA**. The Query Forwarding rows send every client of this Unbound to that proxy for the speaker names. **The same proxy is not reused for any public host.** TLS key-logging in the proxy is disabled by default; enable it only in authorized test environments and lock/remove the log file.
 - The eMudhra tradeoff is a deliberate owner choice made knowingly, overriding the earlier recommendation to use a self-generated CA; it is documented here so a future reader understands both the rationale and the weakness.

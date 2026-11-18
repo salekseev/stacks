@@ -250,7 +250,9 @@ Expected status includes `launch.json : updatesd убран`, `applier     : з�
 adb push /home/salekseev/src/github.com/salekseev/stacks/contrib/bin/dropbearkey /data/opt/bin/dropbearkey
 adb shell chmod +x /data/opt/bin/dropbear /data/opt/bin/dropbearkey
 adb shell /data/opt/bin/dropbearkey -t ed25519 -f /data/opt/etc/dropbear/hk_ed25519
+adb push /home/salekseev/src/github.com/salekseev/stacks/contrib/etc/dropbear/authorized_keys /data/opt/etc/dropbear/authorized_keys
 adb push /home/salekseev/src/github.com/salekseev/stacks/contrib/etc/init.d/S99zdropbear /data/opt/etc/init.d/S99zdropbear
+adb shell chmod 600 /data/opt/etc/dropbear/authorized_keys
 adb shell chmod +x /data/opt/etc/init.d/S99zdropbear
 adb shell /data/opt/etc/init.d/S99zdropbear'
 ```
@@ -272,7 +274,7 @@ adb shell sh /data/opt/yandex-noupdate.sh status'
 ssh -p 2222 -o StrictHostKeyChecking=accept-new root@<MIDI_IP> id
 ```
 
-Expected: `uid=0(root)` over both ADB and SSH. Dropbear has an empty root password (`-B`). The speaker stays on IoT.
+Expected: `uid=0(root)` over both ADB and SSH. Dropbear is key-only (`-s`). The private key stays in 1Password. The speaker stays on IoT.
 
 ---
 
