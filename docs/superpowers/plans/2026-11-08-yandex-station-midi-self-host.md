@@ -6,7 +6,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-11-08-yandex-station-midi-self-host-design.md`
 
-**Status:** Repo files are on `feature/yandex-station-midi-self-host` (contrib, five submodules, Compose file, Host Override CSV, image workflow). Device, silverstone host, and OPNsense steps are still gated on the unlock below. This plan does not downgrade firmware and does not factory-reset a second time. There is no dnsmasq service and no Query Forwarding file.
+**Status:** Repo files are on `feature/yandex-station-midi-self-host` (contrib, five submodules, Compose file, IoT-only Unbound tags, image workflow). Device, silverstone host, and OPNsense steps are still gated on the unlock below. This plan does not downgrade firmware and does not factory-reset a second time. There is no dnsmasq service and no Query Forwarding file.
 
 **Working branch:** `feature/yandex-station-midi-self-host`
 
@@ -15,11 +15,11 @@
 ## Do these in order
 
 1. **Task 1** — stage Supertonic 3, prompts, and `.env` on silverstone.
-2. **Task 2** — import the Host Overrides, confirm OPNsense NTP on the IoT interface, add the LAN-to-speaker ADB passes, and keep the IoT DHCP DNS server at `192.168.99.1`. Dig before anything else.
+2. **Task 2** — install the tagged Unbound zones, delete any global Host Overrides for these names, confirm OPNsense NTP on the IoT interface, add the LAN-to-speaker ADB passes, and keep the IoT DHCP DNS server at `192.168.99.1`. Dig from IoT and from LAN before anything else.
 3. **Task 3** — start lite-kit on `192.168.99.10` with `run/no_downgrade`. The host cannot bind that address: TrueNAS owns `*:80` and `*:443`, and VLAN 99 is tagged on `ens1f0np0`.
 4. **Task 4** — button reset, then the in-app Wi-Fi join onto IoT, then ADB on silverstone. No `uid=0` means stop.
 5. **Task 5** — lock in root and confirm a reboot.
-6. **Task 6** — `stop.sh` (ignore its "DNS back to automatic" line), then `docker compose up`.
+6. **Task 6** — remove the lite-kit container, then `docker compose up`.
 7. **Task 7** — dig `ntp.yantp.net`, then a normal reboot and a spoken question.
 8. **Task 8** — write down what was verified.
 
@@ -30,7 +30,7 @@ Every `adb` command runs on silverstone (`ssh silverstone 'adb ...'`), so there 
 ## Environment
 
 - silverstone LAN address is `192.168.1.10`. The station must not be sent to the Tailscale address `100.77.121.38`.
-- Speakers live on OPNsense IoT: `opt1`, VLAN 99, `ix2_vlan99`, `192.168.99.0/24`, gateway `192.168.99.1`. IoT also has delegated IPv6. LAN is `192.168.1.0/24`. The Query Forwarding rows apply to every client of this Unbound.
+- Speakers live on OPNsense IoT: `opt1`, VLAN 99, `ix2_vlan99`, `192.168.99.0/24`, gateway `192.168.99.1`. IoT also has delegated IPv6. LAN is `192.168.1.0/24`. Speaker DNS is tagged for `192.168.99.0/24` only. LAN clients are not tagged.
 - Host paths: config `/mnt/spool/apps/config/yandex-station/`, data `/mnt/spool/apps/data/yandex-station/`. The `apps` account is uid/gid **568**.
 - Current firmware `0.373.1.16…20261104` is newer than the Midi build lite-kit's README records (`factory-9`). A factory reset wipes `/data` and cannot revert firmware.
 - Placeholders: `<MIDI_MAC>` (capture before the reset), `<MIDI_IP>` (an address in `192.168.99.0/24`), `<OPENAI_API_KEY>` (the codex-lb `yandex` key), `<GIGAAM_DEVICE>` (`cpu` or `cuda`), `<TTS_VOICE>` (`M1`–`M5` or `F1`–`F5`; pinned supertonic README has no `F6`). Leave `OPENAI_BASE_URL` and `OPENAI_MODEL` unset; Compose uses `http://codex-lb:2455/v1` and `gpt-6-luna`. ADB and SSH run from silverstone, `192.168.1.10`.
@@ -42,7 +42,8 @@ Every `adb` command runs on silverstone (`ssh silverstone 'adb ...'`), so there 
 | File | Responsibility | Change |
 |---|---|---|
 | `stacks/yandex-station.yaml` | v3rt3p services on the IoT ipvlan. No dnsmasq, no NTP container, no healthchecks. | On this branch |
-| `stacks/yandex-station/unbound-host-overrides.csv` | Host Overrides. HTTPS names are `192.168.99.10`. `ntp.yantp.net` is `192.168.99.1`. | Import in the UI |
+| `stacks/yandex-station/unbound-iot-acl.conf` | Tagged local zones for `192.168.99.0/24`. Not a global Host Override. | Install in `unbound.opnsense.d` |
+| `stacks/yandex-station/unbound-host-overrides.csv` | The same names and addresses, for reading. Do not import it. A global import applies to the LAN. | Do not import |
 | `stacks/yandex-station/{https-proxy,quasar-server,quasistreaming-gigam,supertonic-tts,processor}` | Five git submodules. Image tags are their short SHAs. | On this branch |
 | `.github/workflows/v3rt3p-images.yml` | PR builds the five images. A master push publishes `ghcr.io/salekseev/v3rt3p-<svc>:<sha>`. | On this branch |
 | `contrib/yandex-noupdate.sh`, `contrib/bin/dropbear`, `contrib/bin/dropbearkey`, `contrib/etc/init.d/S99zdropbear` | OTA disable and Dropbear. Binaries are static ARM EABI5. | On this branch |
@@ -51,7 +52,7 @@ Every `adb` command runs on silverstone (`ssh silverstone 'adb ...'`), so there 
 | `/mnt/spool/apps/config/yandex-station/v3rt3p/prompts/` | Three handlebars files from processor `a43e40e`. | Task 1 |
 | `/mnt/spool/apps/data/yandex-station/v3rt3p/{postgres-data,gigaam-cache}/` | Postgres data and the GigaAM download cache. | Task 1 |
 | `~/lite-kit/` on silverstone | Unlock HTTPS stand. Not a Compose service. Its dnsmasq is not the speaker's resolver. | Task 3, stopped in Task 6 |
-| OPNsense Host Overrides | The rows in `unbound-host-overrides.csv`. | Import before the reset |
+| OPNsense tagged local zones | `unbound-iot-acl.conf` for `192.168.99.0/24`. | Install before the reset |
 | OPNsense IoT DHCP and firewall | Reservation on `opt1` with DNS `192.168.99.1`. Passes in §5.6 of the spec. | Task 2 |
 
 ---
@@ -130,11 +131,11 @@ Expected: `.env` stays owned by the deploying user. The GigaAM and Supertonic im
 
 ## Task 2: Host Overrides, firewall, reservation **[USER SHELL]**
 
-Do this before the button reset. Speaker HTTPS and NTP stay on VLAN 99, so they do not need an IoT-to-LAN pass. Do not install `unbound-iot-view.conf` or a Query Forwarding file. `interface-view` on `ix2_vlan99` took the resolver down.
+Do this before the button reset. Speaker HTTPS and NTP stay on VLAN 99, so they do not need an IoT-to-LAN pass. Do not use `interface-view`. That option on `ix2_vlan99` took the resolver down. Do not import the CSV as global Host Overrides.
 
 - [ ] **Step 1: record `<MIDI_MAC>`** from the current lease or the speaker label.
 
-- [ ] **Step 2: import Host Overrides** from `stacks/yandex-station/unbound-host-overrides.csv`. HTTPS names are `192.168.99.10`. `ntp.yantp.net` is `192.168.99.1`. No AAAA rows.
+- [ ] **Step 2: install `stacks/yandex-station/unbound-iot-acl.conf`** as `/usr/local/etc/unbound.opnsense.d/yandex-iot-acl.conf`. Delete any global Host Overrides for these names. Run `unbound-checkconf` and stop if it fails. Then restart Unbound. The file tags `192.168.99.0/24` and the current IoT prefix `2600:4040:5b42:2599::/64`. Update the prefix if the delegation changes.
 
 - [ ] **Step 3: NTP on the IoT interface.** Services → NTP listens on `opt1` (`ix2_vlan99`). From a host that can reach the IoT gateway:
 
@@ -159,44 +160,52 @@ No pass from IoT to `192.168.1.10` for TCP `80`, `443`, `31116` or UDP `123`. No
 dig @192.168.99.1 quasar.yandex.net A +short
 dig @192.168.99.1 quasar.yandex.net AAAA +short
 dig @192.168.99.1 ntp.yantp.net A +short
+dig @192.168.1.1 quasar.yandex.net A +short
+dig @192.168.1.1 login.yandex.ru A +short
 ```
 
-Expected: `quasar.yandex.net` prints `192.168.99.10`. `ntp.yantp.net` prints `192.168.99.1`. The AAAA command prints nothing. Stop if either A query is wrong.
+Expected: from an IoT source, `quasar.yandex.net` prints `192.168.99.10` and `ntp.yantp.net` prints `192.168.99.1`. AAAA prints nothing. From a LAN host, neither name prints `192.168.99.10`. Stop if the LAN query is hijacked. The phone that joins the speaker uses that LAN resolver.
 
 ---
 
 ## Task 3: Start lite-kit
 
-The speaker resolves the unlock names to `192.168.99.10` through the Host Overrides. lite-kit has to answer there. The host LAN address cannot: VLAN 99 is tagged, and TrueNAS owns host ports `80` and `443`. Put `192.168.99.10/24` on `ens1f0v2` for the unlock, then remove it before https-proxy takes that address. lite-kit's own dnsmasq is not the speaker's resolver.
+The speaker resolves the unlock names to `192.168.99.10`. lite-kit has to answer there from its own network namespace. Do not add `192.168.99.10` to `ens1f0v2` or any host interface. TrueNAS nginx listens on `0.0.0.0:80` and `:443`, so a host address would both fail the bind and publish the UI on the IoT VLAN. Also keep IPv6 off on `ens1f0v2` (`net.ipv6.conf.ens1f0v2.disable_ipv6=1`). The container's own dnsmasq is not the speaker's resolver.
 
-- [ ] **Step 1: clone, block firmware serving, start on `192.168.99.10`**
+- [ ] **Step 1: clone, block firmware serving, start a container on `192.168.99.10`**
 
 ```bash
 ! ssh silverstone 'test -d ~/lite-kit/.git || git clone https://github.com/krevetkqqq/lite-kit.git ~/lite-kit
 find ~/lite-kit/firmware -name "*.zip" -print | grep -q . && { echo "firmware zip present; remove it"; exit 1; }
 mkdir -p ~/lite-kit/run
 touch ~/lite-kit/run/no_downgrade
-sudo ip addr replace 192.168.99.10/24 dev ens1f0v2
-cd ~/lite-kit && sudo LOCAL_IP=192.168.99.10 ./start.sh'
+sudo docker network inspect yandex-iot >/dev/null 2>&1 || sudo docker network create -d ipvlan \
+  --subnet=192.168.99.0/24 --gateway=192.168.99.1 \
+  -o parent=ens1f0v2 -o ipvlan_mode=l2 yandex-iot
+sudo docker rm -f yandex-lite-kit >/dev/null 2>&1 || true
+sudo docker run -d --name yandex-lite-kit \
+  --network yandex-iot --ip 192.168.99.10 \
+  -v "$HOME/lite-kit:/lite-kit" \
+  -e LOCAL_IP=192.168.99.10 \
+  --entrypoint bash debian:bookworm-slim \
+  -lc "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y dnsmasq python3 ca-certificates procps && cd /lite-kit && ./start.sh && tail -f /lite-kit/log/server.log"'
 ```
 
-Expected: the script prints address `192.168.99.10`. `run/no_downgrade` is the flag `equasar_server.py` honors. `run/downgrade` only changes the banner. Do not run `install-firmware.sh`.
+Expected: `docker logs yandex-lite-kit` prints address `192.168.99.10`. `run/no_downgrade` is the flag `equasar_server.py` honors. Do not run `install-firmware.sh`. Do not run `./start.sh` on the host.
 
 - [ ] **Step 2: confirm the stand**
 
 ```bash
-! ssh silverstone 'ps -p "$(cat ~/lite-kit/run/server.pid)" -o args=
-dig @192.168.1.10 quasar.yandex.net A +short
-dig @192.168.1.10 quasar.yandex.net AAAA +short'
+! ssh silverstone 'sudo docker exec yandex-lite-kit ps -o args= -p "$(cat /lite-kit/run/server.pid)"'
 ```
 
-Expected: the process is `scripts/equasar_server.py`. `dig @192.168.1.10` may also print `192.168.1.10`; that only proves lite-kit's own dnsmasq. The speaker uses Task 2's view. `ps | grep lite-kit` is the wrong check: the argv does not contain that string.
+Expected: the process is `scripts/equasar_server.py`. The speaker uses the tagged zones from Task 2. `ps | grep lite-kit` is the wrong check: the argv does not contain that string.
 
 ---
 
 ## Task 4: One button reset, app join, ADB gate **[USER SHELL]**
 
-Task 2's view answers from an IoT source, and Task 3 is listening on `:80/:443`. Resetting before both leaves the speaker on ordinary DNS or with nowhere to send the unlock query.
+Task 2's tagged zones answer from an IoT source, and the lite-kit container is listening on `192.168.99.10:80` and `:443`. Resetting before both leaves the speaker on ordinary DNS or with nowhere to send the unlock query.
 
 **Reset (Midi / `cucumber`):** unplug power, hold the rear mute-microphone button, plug power back in, hold about 7–10 seconds until the LED is yellow-green, release, and wait for the setup prompt.
 
@@ -283,11 +292,10 @@ Expected: `uid=0(root)` over both ADB and SSH. Dropbear is key-only (`-s`). The 
 - [ ] **Step 1: stop lite-kit**
 
 ```bash
-! ssh silverstone 'cd ~/lite-kit && sudo ./stop.sh
-ss -tulpn | grep -E ":(53|80|443)" || echo "ports free"'
+! ssh silverstone 'sudo docker rm -f yandex-lite-kit'
 ```
 
-Expected: `equasar_server.py` is gone, and `192.168.99.10` ports `80` and `443` are free for https-proxy. `stop.sh` says to put router DNS back on automatic. Do not. IoT DNS stays `192.168.99.1`, and the Host Overrides stay.
+Expected: the container is gone, so `192.168.99.10` is free for https-proxy. The tagged zones stay. IoT DNS stays `192.168.99.1`.
 
 - [ ] **Step 2: deploy**
 
