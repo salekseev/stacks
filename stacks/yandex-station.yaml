@@ -6,8 +6,9 @@
 # address. ntp-server holds NTP_IP (UDP 123). Host Overrides must agree:
 # the HTTPS names and ntp.yantp.net are separate addresses.
 #
-# ipvlan L2 parent is the host VLAN 99 interface (IOT_PARENT). The container
-# addresses are not host ports, so the TrueNAS UI can keep *:80 and *:443.
+# ipvlan L2 parent is an SR-IOV virtual function on the LAN NIC (IOT_PARENT).
+# That function is an access port for VLAN 99, so container frames leave tagged.
+# The container addresses are not host ports, so the TrueNAS UI can keep *:80 and *:443.
 # postgres, processor, quasistreaming-gigam, and supertonic-tts stay on the
 # stack network. https-proxy is on both, and quasar-server uses that namespace,
 # so those service names still resolve.
@@ -111,19 +112,28 @@ services:
     volumes:
       - /mnt/spool/apps/config/yandex-station/v3rt3p/supertonic-tts-assets:/assets:ro
 
-  # Brain: builds prompts, calls the cloud OpenAI-compatible LLM.
-  # Template env names are per processor/src/environment.ts (no PROCESSOR_ prefix
-  # on the template paths).
+  # Brain: builds prompts and calls codex-lb (stacks/codex-lb.yaml) with the
+  # yandex key. Template env names are per processor/src/environment.ts (no
+  # PROCESSOR_ prefix on the template paths).
   processor:
     image: ghcr.io/salekseev/v3rt3p-processor:a43e40e
     build:
       context: ./yandex-station/processor
     container_name: v3rt3p-processor
     restart: unless-stopped
+    # quasar-server reaches this service by name on default. shared-services is
+    # how this service reaches codex-lb. Listing any network drops the implicit default.
+    networks:
+      - default
+      - shared-services
     environment:
-      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://openrouter.ai/api/v1}
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      OPENAI_MODEL: ${OPENAI_MODEL}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-http://codex-lb:2455/v1}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?set OPENAI_API_KEY (codex-lb yandex key)}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-6-luna}
+      OPENAI_REASONING_EFFORT: ${OPENAI_REASONING_EFFORT:-low}
+      # Upstream Sentry.init always runs (tracesSampleRate 1) and its default
+      # DSN is a sentry.io placeholder. This address is closed.
+      SENTRY_DSN: https://disabled@127.0.0.1:9/1
       PROMPT_TEMPLATE_PATH: /prompt.handlebars
       STATE_PROMPT_TEMPLATE_PATH: /prompt-state.handlebars
       FUNCTIONS_PROMPT_TEMPLATE_PATH: /prompt-functions.handlebars
@@ -149,10 +159,14 @@ services:
   # real trust check is TLS to https://quasar.yandex.net on :443.
 
 networks:
+  # Created out-of-band: `docker network create shared-services`.
+  # The processor reaches codex-lb (stacks/codex-lb.yaml) by name here.
+  shared-services:
+    external: true
   iot:
     driver: ipvlan
     driver_opts:
-      parent: ${IOT_PARENT:?set IOT_PARENT to the VLAN 99 interface}
+      parent: ${IOT_PARENT:?set IOT_PARENT to the VLAN 99 SR-IOV function}
       ipvlan_mode: l2
     ipam:
       config:

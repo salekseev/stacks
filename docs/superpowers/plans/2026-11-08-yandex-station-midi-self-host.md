@@ -2,11 +2,11 @@
 
 > **For agentic workers:** Steps use checkbox (`- [ ]`) syntax. Steps marked **[USER SHELL]** touch the physical Midi, silverstone, or OPNsense. Do them in the order below. Repo files already on this branch are marked done and are not recommitted here.
 
-**Goal:** A Yandex Station Midi (`cucumber`) on the IoT VLAN uses a self-hosted backend. OPNsense Unbound answers the hijack list for that VLAN before the button reset. One factory reset, while lite-kit is listening on `:80/:443`, opens root ADB. Root is locked in. lite-kit is then stopped and `stacks/yandex-station.yaml` takes those ports. DNS does not move.
+**Goal:** A Yandex Station Midi (`cucumber`) on the IoT VLAN uses a self-hosted backend. OPNsense forwards the Yandex zones to dnsmasq on silverstone port 1153 before the button reset. One factory reset, while lite-kit is listening on `:80/:443`, opens root ADB. Root is locked in. lite-kit is then stopped and `stacks/yandex-station.yaml` takes those ports. DNS does not move.
 
 **Spec:** `docs/superpowers/specs/2026-11-08-yandex-station-midi-self-host-design.md`
 
-**Status:** Repo files are on `feature/yandex-station-midi-self-host` (contrib, five submodules, Compose file, IoT Unbound view, image workflow). Device, silverstone host, and OPNsense steps are still gated on the unlock below. This plan does not downgrade firmware and does not factory-reset a second time.
+**Status:** Repo files are on `feature/yandex-station-midi-self-host` (contrib, five submodules, Compose file, forward-zone list, dnsmasq, image workflow). Device, silverstone host, and OPNsense steps are still gated on the unlock below. This plan does not downgrade firmware and does not factory-reset a second time.
 
 **Working branch:** `feature/yandex-station-midi-self-host`
 
@@ -15,12 +15,12 @@
 ## Do these in order
 
 1. **Task 1** — stage Supertonic 3, prompts, and `.env` on silverstone.
-2. **Task 2** — install the IoT Unbound view, the firewall passes, and an IoT DHCP reservation whose DNS server stays `192.168.99.1`. Dig from an IoT host before anything else.
+2. **Task 2** — confirm the Query Forwarding rows, start dnsmasq on port 1153, add the firewall passes, and keep the IoT DHCP DNS server at `192.168.99.1`. Dig before anything else.
 3. **Task 3** — start lite-kit with `LOCAL_IP=192.168.1.10` and `run/no_downgrade`.
 4. **Task 4** — button reset, then the in-app Wi-Fi join onto IoT, then ADB on silverstone. No `uid=0` means stop.
 5. **Task 5** — lock in root and confirm a reboot.
 6. **Task 6** — `stop.sh` (ignore its "DNS back to automatic" line), then `docker compose up`.
-7. **Task 7** — dig `ntp.yantp.net` from IoT, confirm LAN does not get the hijack, then a normal reboot and a spoken question.
+7. **Task 7** — dig `ntp.yantp.net`, then a normal reboot and a spoken question.
 8. **Task 8** — write down what was verified.
 
 Every `adb` command runs on silverstone (`ssh silverstone 'adb ...'`), so there is one ADB server. The repo checkout used by those commands is `/home/salekseev/src/github.com/salekseev/stacks` on silverstone.
@@ -30,10 +30,10 @@ Every `adb` command runs on silverstone (`ssh silverstone 'adb ...'`), so there 
 ## Environment
 
 - silverstone LAN address is `192.168.1.10`. The station must not be sent to the Tailscale address `100.77.121.38`.
-- Speakers live on OPNsense IoT: `opt1`, VLAN 99, `ix2_vlan99`, `192.168.99.0/24`, gateway `192.168.99.1`. IoT also has delegated IPv6. LAN is `192.168.1.0/24`. Russian, CCTV, and DMZ are not in the view.
+- Speakers live on OPNsense IoT: `opt1`, VLAN 99, `ix2_vlan99`, `192.168.99.0/24`, gateway `192.168.99.1`. IoT also has delegated IPv6. LAN is `192.168.1.0/24`. The Query Forwarding rows apply to every client of this Unbound.
 - Host paths: config `/mnt/spool/apps/config/yandex-station/`, data `/mnt/spool/apps/data/yandex-station/`. The `apps` account is uid/gid **568**.
 - Current firmware `0.373.1.16…20261104` is newer than the Midi build lite-kit's README records (`factory-9`). A factory reset wipes `/data` and cannot revert firmware.
-- Placeholders: `<MIDI_MAC>` (capture before the reset), `<MIDI_IP>` (an address in `192.168.99.0/24`), `<OPENAI_BASE_URL>`, `<OPENAI_API_KEY>`, `<OPENAI_MODEL>`, `<GIGAAM_DEVICE>` (`cpu` or `cuda`), `<TTS_VOICE>` (`M1`–`M5` or `F1`–`F5`; pinned supertonic README has no `F6`). ADB and SSH run from silverstone, `192.168.1.10`.
+- Placeholders: `<MIDI_MAC>` (capture before the reset), `<MIDI_IP>` (an address in `192.168.99.0/24`), `<OPENAI_API_KEY>` (the codex-lb `yandex` key), `<GIGAAM_DEVICE>` (`cpu` or `cuda`), `<TTS_VOICE>` (`M1`–`M5` or `F1`–`F5`; pinned supertonic README has no `F6`). Leave `OPENAI_BASE_URL` and `OPENAI_MODEL` unset; Compose uses `http://codex-lb:2455/v1` and `gpt-6-luna`. ADB and SSH run from silverstone, `192.168.1.10`.
 
 ---
 
@@ -41,17 +41,18 @@ Every `adb` command runs on silverstone (`ssh silverstone 'adb ...'`), so there 
 
 | File | Responsibility | Change |
 |---|---|---|
-| `stacks/yandex-station.yaml` | v3rt3p services and NTP. Sockets bind `192.168.1.10`. No DNS listener. No healthchecks. | On this branch |
-| `stacks/yandex-station/unbound-iot-view.conf` | IoT Unbound view. `static` A records, `view-first: yes`. `!` CDN names are absent. | On this branch |
+| `stacks/yandex-station.yaml` | v3rt3p services, dnsmasq on `192.168.1.10:1153`, and NTP. No healthchecks. | On this branch |
+| `stacks/yandex-station/unbound-forward.conf` | Query Forwarding rows. Record of the UI. Do not install beside the same UI rows. | On this branch |
+| `stacks/yandex-station/dnsmasq.conf` | Speaker `address=` lines. Other names in the forwarded zones go to `1.1.1.1`. | On this branch |
 | `stacks/yandex-station/{https-proxy,quasar-server,quasistreaming-gigam,supertonic-tts,processor}` | Five git submodules. Image tags are their short SHAs. | On this branch |
 | `.github/workflows/v3rt3p-images.yml` | PR builds the five images. A master push publishes `ghcr.io/salekseev/v3rt3p-<svc>:<sha>`. | On this branch |
 | `contrib/yandex-noupdate.sh`, `contrib/bin/dropbear`, `contrib/bin/dropbearkey`, `contrib/etc/init.d/S99zdropbear` | OTA disable and Dropbear. Binaries are static ARM EABI5. | On this branch |
 | `/mnt/spool/apps/config/yandex-station/v3rt3p/.env` | Secrets. Mode `600`, owned by the deploying user. | Task 1 |
 | `/mnt/spool/apps/config/yandex-station/v3rt3p/supertonic-tts-assets/` | Supertonic 3 tree, `onnx/` and `voice_styles/` at the top. | Task 1 |
-| `/mnt/spool/apps/config/yandex-station/v3rt3p/prompts/` | Three handlebars files from processor `6129628`. | Task 1 |
+| `/mnt/spool/apps/config/yandex-station/v3rt3p/prompts/` | Three handlebars files from processor `a43e40e`. | Task 1 |
 | `/mnt/spool/apps/data/yandex-station/v3rt3p/{postgres-data,gigaam-cache}/` | Postgres data and the GigaAM download cache. | Task 1 |
 | `~/lite-kit/` on silverstone | Unlock HTTPS stand. Not a Compose service. Its dnsmasq is not the speaker's resolver. | Task 3, stopped in Task 6 |
-| `/usr/local/etc/unbound.opnsense.d/yandex-iot.conf` | Copy of the view. Host Overrides stay empty. | Task 2 |
+| OPNsense Query Forwarding | The rows in `unbound-forward.conf`, aimed at `192.168.1.10` port `1153`. | Done in the UI |
 | OPNsense IoT DHCP and firewall | Reservation on `opt1` with DNS `192.168.99.1`. Passes in §5.6 of the spec. | Task 2 |
 
 ---
@@ -88,7 +89,7 @@ Expected: `onnx/` and `voice_styles/` are directly inside `supertonic-tts-assets
 - [ ] **Step 3: prompts from the pinned processor commit**
 
 ```bash
-! ssh silverstone 'base=https://raw.githubusercontent.com/v3rt3p/processor/612962822873de71d2ca355a3c1d884fc11b1bc3
+! ssh silverstone 'base=https://raw.githubusercontent.com/v3rt3p/processor/a43e40e02f0dd3e6929dfcecf5b8781d3e86024e
 dest=/mnt/spool/apps/config/yandex-station/v3rt3p/prompts
 curl -fsSL "$base/prompt.handlebars" -o "$dest/prompt.handlebars"
 curl -fsSL "$base/prompt-state.handlebars" -o "$dest/prompt-state.handlebars"
@@ -103,9 +104,7 @@ Expected: three non-empty files.
 ! ssh silverstone 'umask 077
 cat > /mnt/spool/apps/config/yandex-station/v3rt3p/.env << EOF
 POSTGRES_PASSWORD=<POSTGRES_PASSWORD>
-OPENAI_BASE_URL=<OPENAI_BASE_URL>
 OPENAI_API_KEY=<OPENAI_API_KEY>
-OPENAI_MODEL=<OPENAI_MODEL>
 GIGAAM_DEVICE=<GIGAAM_DEVICE>
 TTS_VOICE=<TTS_VOICE>
 TZ=Europe/Moscow
