@@ -1,0 +1,12 @@
+#!/bin/sh
+DB=/data/opt/bin/dropbear
+DIR=/data/opt/etc/dropbear
+HK=$DIR/hk_ed25519
+AK=$DIR/authorized_keys
+mkdir -p "$DIR"
+chmod 755 "$DIR"
+[ -f "$HK" ] || "$DB"key -t ed25519 -f "$HK"
+[ -s "$AK" ] && chmod 600 "$AK"
+# -D is the directory that holds authorized_keys. Root's home is on the
+# read-only rootfs, so the key is not copied to /root/.ssh.
+exec "$DB" -r "$HK" -p 2222 -s -D "$DIR"

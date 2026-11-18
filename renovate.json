@@ -16,6 +16,12 @@
   ],
   "packageRules": [
     {
+      "description": "v3rt3p images are pinned to their submodule SHA and rebuilt by CI; bumps come from submodule updates (same commit), not docker tag lookups",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["ghcr.io/salekseev/v3rt3p-{/,}**"],
+      "enabled": false
+    },
+    {
       "description": "Pin digests for rolling tags to track underlying image changes",
       "matchDatasources": [
         "docker"
