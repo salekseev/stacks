@@ -33,11 +33,6 @@ services:
     user: "568:568"
     secrets:
       - hindsight_env
-    volumes:
-      # Dedicated Codex auth home (CODEX_HOME=/codex). NOT :ro — the provider
-      # writes the rotated refresh token back, and a read-only mount breaks
-      # refresh on the first rotation.
-      - /mnt/spool/apps/config/hindsight/codex:/codex
     environment:
       # Worker identity: stable ID survives restarts so the worker can reclaim
       # its own in-progress tasks (avoids dead-worker stuck-task issue #624).
@@ -47,21 +42,25 @@ services:
       HINDSIGHT_API_TEXT_SEARCH_EXTENSION: vchord
       HINDSIGHT_API_BASE_PATH: /api
       # API: default LLM (recall, reflect, consolidation) via Hindsight's native
-      # multi-LLM failover chain — no proxy hop.
+      # multi-LLM failover chain.
       #
-      # Primary: ChatGPT/Codex subscription, gpt-5.6-luna, through the native
-      # openai-codex transport. LiteLLM's chatgpt/ provider is deliberately NOT
-      # used: it documents no gpt-5.6 models, and third-party originators get
-      # "Model not found gpt-5.6-luna-free-1p-codexswic-ev3" over ChatGPT OAuth
-      # while the Codex originator succeeds on the same credentials
-      # (openai/codex#31967). The native provider carries that originator.
-      HINDSIGHT_API_LLM_PROVIDER: openai-codex
-      HINDSIGHT_API_LLM_MODEL: gpt-5.6-luna
-      # Dedicated Codex auth home. Codex refresh tokens are single-use and
-      # rotate, so a long-running service sharing ~/.codex/auth.json with an
-      # interactive CLI ends up holding a stale token: reflect then fails with
-      # refresh_token_reused while recall and /health stay green.
-      CODEX_HOME: /codex
+      # Primary: the shared ChatGPT/Codex subscription pool behind codex-lb
+      # (stacks/codex-lb.yaml), reached by name over shared-services. codex-lb
+      # sends the Codex originator upstream, which the ChatGPT backend requires
+      # for these models (openai/codex#31967 — why LiteLLM's chatgpt/ provider
+      # is not used), and owns every account's token refresh.
+      # gpt-6-luna over gpt-5.6-luna: higher on Hindsight's reflect benchmark
+      # (89.3 vs 86.7) at roughly half the cost per case, same 272k context and
+      # reasoning levels, so the per-operation effort pins below carry over.
+      # The codex-lb key is `opportunistic` traffic: it only spends expendable
+      # account capacity and is refused when the pool must keep reserve, which
+      # falls through to member 1 below.
+      # HINDSIGHT_API_LLM_API_KEY = this stack's codex-lb key. It lives in
+      # /run/secrets/hindsight_env: the ONE LLM var allowed there. Routing and
+      # tuning stay here as the single source of truth.
+      HINDSIGHT_API_LLM_PROVIDER: openai
+      HINDSIGHT_API_LLM_BASE_URL: http://codex-lb:2455/v1
+      HINDSIGHT_API_LLM_MODEL: gpt-6-luna
       # Member 1: local vLLM on the 192.168.1.147 box (that host is NOT
       # silverstone). REASONING_EFFORT=none because gemma-4 otherwise emits a
       # thinking block that burns tokens on fact extraction.
