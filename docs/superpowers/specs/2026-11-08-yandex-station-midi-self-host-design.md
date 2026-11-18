@@ -121,7 +121,7 @@ New stack at `stacks/yandex-station.yaml`, following `stacks/hindsight.yaml` / `
 - **Build sources vendored locally.** Five images are built from git. Vendor them as git submodules under `stacks/yandex-station/` and pin `image:` to each submodule's short SHA. `postgres` and `cturra/ntp` pull from the registry.
 - Config/data on the standard layout:
   - The Compose file stays at `stacks/yandex-station.yaml`. It is not copied into the config directory.
-  - `domains/yandex.txt` stays inside the `https-proxy` image. The forward list is `stacks/yandex-station/unbound-forward.conf`, entered as OPNsense Query Forwarding rows. The file is the record of those rows. Copying it into `unbound.opnsense.d` while the same names are in the UI makes Unbound refuse to start.
+  - `domains/yandex.txt` stays inside the `https-proxy` image. Speaker DNS is OPNsense Host Overrides, recorded in `stacks/yandex-station/unbound-host-overrides.csv`. HTTPS names are `192.168.99.10`. `ntp.yantp.net` is `192.168.99.1`. Do not install a Query Forwarding file or an Unbound view.
   - `/mnt/spool/apps/config/yandex-station/v3rt3p/.env` — `POSTGRES_PASSWORD` and `OPENAI_API_KEY` (the codex-lb `yandex` key). Owned by the deploying user, mode `600`. Leave `OPENAI_BASE_URL` and `OPENAI_MODEL` unset so Compose uses `http://codex-lb:2455/v1` and `gpt-6-luna`.
   - `/mnt/spool/apps/config/yandex-station/v3rt3p/prompts/` — the three processor handlebars files from the pinned processor commit.
   - `/mnt/spool/apps/config/yandex-station/v3rt3p/supertonic-tts-assets/` — **read-only** Supertonic 3 tree (`onnx/` and `voice_styles/` at the mount root), from Hugging Face revision `aafc6e32416a594460b32413efc49d7fe4ce6d46`.
@@ -180,7 +180,7 @@ Two trust mechanisms, one per phase:
 
 ## 6. Routing
 
-OPNsense Unbound host overrides are server-wide. This design does not add any. The hijack list is Query Forwarding, recorded in `stacks/yandex-station/unbound-forward.conf` and entered in the UI. An Unbound view is not used. `interface-view` on `ix2_vlan99` took the resolver down.
+OPNsense Unbound Host Overrides are server-wide. They are the speaker DNS: HTTPS names answer `192.168.99.10`, and `ntp.yantp.net` answers `192.168.99.1`. The record is `stacks/yandex-station/unbound-host-overrides.csv`. Query Forwarding and an Unbound view are not used. `interface-view` on `ix2_vlan99` took the resolver down.
 
 ```
 forward-zone:
