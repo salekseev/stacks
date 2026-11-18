@@ -3,8 +3,9 @@
 # Yandex Station self-hosted backend (v3rt3p). The speaker reaches this stack
 # on the IoT VLAN. https-proxy holds SPEAKER_IP (TCP 80 and 443). quasar-server
 # shares that network namespace so the control API on TCP 31116 is the same
-# address. ntp.yantp.net is a Host Override to OPNsense at 192.168.99.1,
-# which already serves NTP. This stack does not run an NTP server.
+# address. ntp.yantp.net is a tagged local zone for the IoT subnet and
+# answers at OPNsense 192.168.99.1, which already serves NTP. This stack
+# does not run an NTP server.
 #
 # ipvlan L2 parent is an SR-IOV virtual function on the LAN NIC (IOT_PARENT).
 # That function is an access port for VLAN 99, so container frames leave tagged.

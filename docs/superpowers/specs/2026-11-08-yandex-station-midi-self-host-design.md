@@ -1,7 +1,7 @@
 # Yandex Station Midi self-hosted stand — Design Spec
 
 - **Date:** 2026-11-08
-- **Status:** Revised 2026-11-18. Backend is the **v3rt3p** stack on an IoT ipvlan address. Speaker DNS is an Unbound tag for `192.168.99.0/24` only, not a global Host Override and not a forward to dnsmasq. One button reset follows while lite-kit is listening on `192.168.99.10:80` and `:443` inside that ipvlan, then lock-in, then the permanent stack. This plan does not downgrade firmware and does not factory-reset a second time.
+- **Status:** Revised 2026-11-18. Backend is the **v3rt3p** stack on an IoT ipvlan address. Speaker DNS is the installed Unbound tag file `yandex-iot-acl.conf`: `access-control-tag` for `192.168.99.0/24` and the current IoT IPv6 prefix, not a global Host Override and not a forward to dnsmasq. Verified the same day: a LAN query is public, and a query sourced from `192.168.99.1` returns the speaker addresses. LAN may reach IoT. IoT may not initiate connections to LAN. One button reset follows while lite-kit is listening on `192.168.99.10:80` and `:443` inside that ipvlan, then lock-in, then the permanent stack. This plan does not downgrade firmware and does not factory-reset a second time.
 - **Stack file:** `stacks/yandex-station.yaml` (v3rt3p backend + eMudhra proxy)
 - **Author:** brainstormed with Claude Code, grounded against `hackalice.me`, `Marker284/yandex-station-extended`, `krevetkqqq/lite-kit`, the **`v3rt3p`** project set (`v3rt3p.github.io`, `https-proxy`, `quasar-server`, `quasistreaming-gigam`, `supertonic-tts`, `processor`), and the repo's knowledge pages
 - **Host facts verified:** silverstone LAN `192.168.1.10`, Midi firmware `0.373…20261104`, 4 GB GPU — user-provided 2026-11-08
@@ -24,7 +24,7 @@ The owner asked for a comparison; **the v3rt3p Compose stack was selected** as t
 
 | Backend | What it is | Why v3rt3p was chosen | Residual cost |
 |---|---|---|---|
-| **v3rt3p stack** (selected) | Compose: `https-proxy` (eMudhra CA) + `quasar-server` + `processor` (LLM) + `quasistreaming-gigam` (ASR) + `supertonic-tts` (TTS) + `postgres`. `ntp.yantp.net` is a Host Override to OPNsense `192.168.99.1` | Multi-container; supplied container builds and **no mandatory GPU**; its stock `https-proxy` uses the **compromised eMudhra CA, which the station trusts out of the box** — this removes the firmware-dependent self-generated-CA step | More services/state to maintain; needs the Supertonic 3 tree from Hugging Face, prompts, Postgres, and the Host Overrides; the stock compromised-CA proxy is a deliberate security tradeoff (see §5.5/§11) |
+| **v3rt3p stack** (selected) | Compose: `https-proxy` (eMudhra CA) + `quasar-server` + `processor` (LLM) + `quasistreaming-gigam` (ASR) + `supertonic-tts` (TTS) + `postgres`. `ntp.yantp.net` is a tagged local zone for the IoT subnet, answering OPNsense `192.168.99.1` | Multi-container; supplied container builds and **no mandatory GPU**; its stock `https-proxy` uses the **compromised eMudhra CA, which the station trusts out of the box** — this removes the firmware-dependent self-generated-CA step | More services/state to maintain; needs the Supertonic 3 tree from Hugging Face, prompts, Postgres, and the tagged Unbound file; the stock compromised-CA proxy is a deliberate security tradeoff (see §5.5/§11) |
 | quasard source build (superseded) | Single Python app on silverstone (`uv`+`torch`), Yandex Music + cloud Edge TTS; a self-generated CA in the station's trust store | Smaller runtime but a self-generated CA needs a **firmware-dependent root exploit** the Nov-4 build may not accept | Baseline draft only; kept in §3/§11 for traceability |
 | Host Python + systemd | Fewer containers, but a second deployment lifecycle outside this repo's stack convention | Not recommended | — |
 
@@ -72,7 +72,7 @@ The customization is documented by independent community sources, cross-referenc
 Two consequences:
 
 1. **The trust step is no longer the load-bearing unknown.** The older quasard design depended on a self-generated CA being rooted into the station's trust store via a firmware-dependent exploit — and the Nov-4 build was shown to reject self-signed servers. v3rt3p sidesteps that entirely: the station trusts the `https-proxy` because the eMudhra CA is **already in the device**, so there is no new firmware trust step. The residual firmware question is narrow: *does 0.373 still validate the eMudhra CA?* — which is very likely but must be confirmed in Phase 0.
-2. **Phase 0 is still required, and it is an unlock gate.** The root unlock (Phase 1) is unchanged. NTP is required once the station uses the local backend: the Host Override for `ntp.yantp.net` is OPNsense at `192.168.99.1`, which already answers UDP 123. lite-kit's own DNS is not what the speaker queries.
+2. **Phase 0 is still required, and it is an unlock gate.** The root unlock (Phase 1) is unchanged. NTP is required once the station uses the local backend: the tagged local zone for `ntp.yantp.net` answers OPNsense at `192.168.99.1`, which already answers UDP 123. lite-kit's own DNS is not what the speaker queries.
 
 ---
 
@@ -106,7 +106,7 @@ Yandex Station Midi (and later speakers) on IoT 192.168.99.0/24
           NTP: ntp.yantp.net → OPNsense 192.168.99.1 (not a container)
 ```
 
-**Phase separation is a handoff of :80 and :443, not of DNS.** The Host Overrides are in place before the button reset and stay. lite-kit binds `:80/:443` on `SPEAKER_IP` until root is locked in, then it is **stopped before** `docker compose up` of https-proxy. `https-proxy` takes those ports. `ntp.yantp.net` stays on OPNsense `192.168.99.1` through the unlock and the cutover.
+**Phase separation is a handoff of :80 and :443, not of DNS.** The tagged zones are in place before the button reset and stay. The lite-kit container holds `192.168.99.10` until root is locked in, then it is removed and its `yandex-iot` network is deleted before `docker compose up`. https-proxy takes that address. `ntp.yantp.net` stays on OPNsense `192.168.99.1` through the unlock and the cutover.
 
 ---
 
@@ -120,7 +120,7 @@ New stack at `stacks/yandex-station.yaml`, following `stacks/hindsight.yaml` / `
 - **Build sources vendored locally.** Five images are built from git. Vendor them as git submodules under `stacks/yandex-station/` and pin `image:` to each submodule's short SHA. `postgres` pulls from the registry. NTP is OPNsense, not an image.
 - Config/data on the standard layout:
   - The Compose file stays at `stacks/yandex-station.yaml`. It is not copied into the config directory.
-  - `domains/yandex.txt` stays inside the `https-proxy` image. Speaker DNS is `stacks/yandex-station/unbound-iot-acl.conf`: tagged local zones for `192.168.99.0/24`. HTTPS names are `192.168.99.10`. `ntp.yantp.net` is `192.168.99.1`. Do not import those names as global Host Overrides, and do not use `interface-view`.
+  - `domains/yandex.txt` stays inside the `https-proxy` image. Speaker DNS is `stacks/yandex-station/unbound-iot-acl.conf`. The file begins with `server:` and `define-tag: "yandex-iot"`, then `access-control-tag` for `192.168.99.0/24` and the current IoT IPv6 prefix. HTTPS names are `192.168.99.10`. `ntp.yantp.net` is `192.168.99.1`. It is installed as `/usr/local/etc/unbound.opnsense.d/yandex-iot-acl.conf`. Do not add those names as global Host Overrides. Do not use `interface-tag` or `interface-view`.
   - `/mnt/spool/apps/config/yandex-station/v3rt3p/.env` — `POSTGRES_PASSWORD` and `OPENAI_API_KEY` (the codex-lb `yandex` key). Owned by the deploying user, mode `600`. Leave `OPENAI_BASE_URL` and `OPENAI_MODEL` unset so Compose uses `http://codex-lb:2455/v1` and `gpt-6-luna`.
   - `/mnt/spool/apps/config/yandex-station/v3rt3p/prompts/` — the three processor handlebars files from the pinned processor commit.
   - `/mnt/spool/apps/config/yandex-station/v3rt3p/supertonic-tts-assets/` — **read-only** Supertonic 3 tree (`onnx/` and `voice_styles/` at the mount root), from Hugging Face revision `aafc6e32416a594460b32413efc49d7fe4ce6d46`.
@@ -151,7 +151,7 @@ Six cooperating services from the v3rt3p docs. NTP is OPNsense, not a container:
 - **`supertonic-tts`** — local OpenAI-compatible TTS. Voices at the pinned README are `M1`–`M5` and `F1`–`F5`. Assets are the Hugging Face Supertonic 3 tree mounted read-only at `/assets`.
 - **`postgres`** — speaker and state DB.
 - **DNS** — `stacks/yandex-station/unbound-iot-acl.conf`. Tagged local zones for sources in `192.168.99.0/24`. There is no dnsmasq service.
-- **NTP** — OPNsense on the IoT gateway `192.168.99.1` (UDP 123, stratum 3). The Host Override for `ntp.yantp.net` names that address. The stack does not run `ntp-server`.
+- **NTP** — OPNsense on the IoT gateway `192.168.99.1` (UDP 123, stratum 3). The tagged local zone for `ntp.yantp.net` names that address. The stack does not run `ntp-server`.
 
 **VRAM budget on the 4 GB box:** the LLM is codex-lb and TTS is local and small, so the GPU stays free unless GigaAM is switched to CUDA. Prompt templates and the Supertonic 3 tree are staged on the host before `up`.
 
@@ -168,9 +168,9 @@ Two trust mechanisms, one per phase:
 
 ### 5.6 Isolation tier & security
 
-- **Domain scope:** `unbound-iot-acl.conf` tags each speaker name. Only clients in `192.168.99.0/24` (and the current IoT IPv6 prefix) receive the local A records. LAN clients, including the phone that runs the Yandex app, keep public answers for `login.yandex.ru`, `oauth.yandex.ru`, and the rest. A `static` zone with no AAAA record leaves AAAA empty. Parent zones are not forwarded.
-- **Firewall, for packets that ingress OPNsense.** On LAN, above the default allow: pass `192.168.1.10` to the speaker TCP `2222,5555`; reject other LAN sources to the speaker on those ports. Speaker HTTPS stays on the IoT VLAN (`SPEAKER_IP` TCP `80`, `443`, `31116`). NTP is the speaker talking to OPNsense at `192.168.99.1` UDP `123`, so there is no IoT-to-LAN pass for port `123`. No pass for port `53` to silverstone. No WAN forward of `80`, `443`, `123`, `31116`, `2222`, or `5555`.
-- **VLAN 99 crosses the firewall only for LAN-to-speaker ADB and SSH.** silverstone is on untagged LAN. The speaker and `192.168.99.10` are both on VLAN 99, so speaker HTTPS does not ingress OPNsense. Do not add `192.168.99.10` to a host interface. TrueNAS nginx listens on `0.0.0.0:80` and `:443`, and `ens1f0v2` must keep IPv6 disabled so the UI is not reachable from the IoT VLAN.
+- **Domain scope:** `unbound-iot-acl.conf` tags each speaker name. Only clients in `192.168.99.0/24` (and the current IoT IPv6 prefix) receive the local A records. LAN clients, including the phone that runs the Yandex app, keep public answers for `login.yandex.ru`, `oauth.yandex.ru`, and the rest. A `static` zone with no AAAA record leaves AAAA empty for a tagged client. Parent zones are not forwarded. Verified 2026-11-18.
+- **Firewall.** LAN (`192.168.1.0/24`) may reach IoT (`192.168.99.0/24`). IoT may not initiate connections to LAN. That policy is accepted for this deployment. No extra pass or reject is added for TCP `2222` or `5555`. silverstone reaches the speaker because it is on LAN. Speaker HTTPS stays on the IoT VLAN (`SPEAKER_IP` TCP `80`, `443`, `31116`) and does not ingress OPNsense. NTP is the speaker talking to OPNsense at `192.168.99.1` UDP `123`, so there is no IoT-to-LAN pass for port `123`. No pass for port `53` to silverstone. No WAN forward of `80`, `443`, `123`, `31116`, `2222`, or `5555`.
+- **The speaker and `192.168.99.10` are both on VLAN 99.** Do not add `192.168.99.10` to a host interface. TrueNAS nginx listens on `0.0.0.0:80` and `:443`, and `ens1f0v2` must keep IPv6 disabled so the UI is not reachable from the IoT VLAN.
 - **SSH is key-only.** Dropbear starts with `-s -D /data/opt/etc/dropbear`. That directory holds `authorized_keys`. Root's home is on the read-only rootfs, so the key is not copied to `/root/.ssh`. The private key stays in 1Password. Never port-forward `:2222` or `:5555`. ADB on `:5555` is still unauthenticated.
 - **Do not expose the silverstone ports to the WAN.** Keep the Midi off any guest or external network.
 - **Compromised-CA hygiene (§11):** do not reuse the eMudhra approach for any device outside this one; keep the proxy local; lock or remove the key-log dir if TLS key-logging is enabled.
@@ -179,15 +179,15 @@ Two trust mechanisms, one per phase:
 
 ## 6. Routing
 
-Speaker names are tagged local zones in `stacks/yandex-station/unbound-iot-acl.conf`. OPNsense includes that file inside the `server:` clause, so the file uses `access-control-tag` and `local-zone-tag`. A `view:` block is not valid there. `interface-view` on `ix2_vlan99` took the resolver down and is not used. Global Host Overrides are not used either: they would answer `login.yandex.ru` and the other names for every LAN client.
+Speaker names are tagged local zones in `stacks/yandex-station/unbound-iot-acl.conf`. The installed file begins with its own `server:` clause and `define-tag: "yandex-iot"`, then `access-control-tag` and `local-zone-tag`. OPNsense copies `/usr/local/etc/unbound.opnsense.d/*.conf` into `/var/unbound/etc` when Unbound starts, and the generated config includes that directory from inside `server:`. A second `server:` clause is what the live `access_lists.conf` uses, and `unbound-checkconf` accepted this file. A `view:` block is not used. `interface-tag` is not used either: `access_lists.conf` allows `0.0.0.0/0` and `::/0`, and any `access-control*:` rule overrides `interface-*` for those clients. `interface-view` on `ix2_vlan99` took the resolver down. Global Host Overrides are not used: they would answer `login.yandex.ru` and the other names for every LAN client. They were removed in the GUI before the tagged file was reloaded.
 
-`access-control-tag` matches `192.168.99.0/24` and the current IoT prefix `2600:4040:5b42:2599::/64`. The prefix can renumber. Update the file when it does. A client without the tag skips the tagged zones and gets the public answer. A `static` zone with only an A record leaves AAAA empty.
+`access-control-tag` matches `192.168.99.0/24` and the current IoT prefix `2600:4040:5b42:2599::/64`. The prefix can renumber. Update the file when it does. `192.168.99.0/24` does not. A client without the tag skips the tagged zones and gets the public answer. A `static` zone with only an A record leaves AAAA empty for a tagged client.
 
 IoT DHCP DNS stays `192.168.99.1`. A reservation on `opt1` may pin the Midi's MAC to a stable address. It does not set a different DNS server.
 
 Order:
 
-1. Delete any global Host Overrides for these names. Install `unbound-iot-acl.conf` only after `unbound-checkconf` succeeds. `dig @192.168.99.1 quasar.yandex.net A` from an IoT source prints `192.168.99.10`. The same query from a LAN host does not. AAAA is empty. `ntp.yantp.net` prints `192.168.99.1` from IoT.
+1. Done 2026-11-18. Global Host Overrides for these names are gone. `yandex-iot-acl.conf` is installed. From source `192.168.99.1`, `quasar.yandex.net` is `192.168.99.10`, `ntp.yantp.net` is `192.168.99.1`, and AAAA is empty. The same names from a LAN host are public.
 2. Run lite-kit as a container on the ipvlan with `--ip 192.168.99.10`. Do not add that address to `ens1f0v2`.
 3. Button reset, then the in-app Wi-Fi join onto IoT, while that container is still listening. Root ADB is checked only after that join. All `adb` commands run on silverstone.
 4. Lock in root (markers, OTA disable, Dropbear `-s -D /data/opt/etc/dropbear`) and confirm a reboot still yields `uid=0`.
@@ -207,14 +207,14 @@ A second button factory reset wipes `/data` and removes the lock-in. If the loca
 | 0.373 still validates the eMudhra CA (expected) | Local impersonation works without installing a CA. | Confirm with `openssl s_client` after the stack is up, then with a spoken request. |
 | eMudhra CA rejected on 0.373 | Activation through the proxy fails. | Stop. This plan does not downgrade and does not install a replacement CA. |
 | No `uid=0` after the app Wi-Fi join | The unlock did not take. | Stop. `firmware/` is empty on purpose, so there is no OTA-AUTO path to wait for. |
-| `ntp.yantp.net` still resolves publicly | The Host Override is missing or still names another address. | `dig @192.168.99.1 ntp.yantp.net A` must print `192.168.99.1`. OPNsense on that address already answers UDP 123. |
+| `ntp.yantp.net` still resolves publicly | The tagged zone is missing, or the query did not come from `192.168.99.0/24`. | `dig @192.168.99.1 ntp.yantp.net A` from an IoT source must print `192.168.99.1`. OPNsense on that address already answers UDP 123. |
 | First GigaAM start has no egress | The checkpoint never lands in the cache. | Allow outbound HTTPS once, or pre-warm the cache as the gigam README describes. Do not copy legacy ONNX files into it. |
 | No transcript | gigam failed (download, audio format, CPU/RAM). | Inspect `v3rt3p-gigam`. |
 | No answer / no speech | `processor` cannot reach codex-lb, or Supertonic assets/voice are missing. | `OPENAI_API_KEY` is the codex-lb `yandex` key. `403 model_not_allowed` means `gpt-6-luna` is not on that key. Voice is `M1`–`M5` or `F1`–`F5`. `onnx/` and `voice_styles/` must sit directly under the assets mount. |
 | lite-kit still holds `192.168.99.10` | https-proxy cannot take that address. | `docker rm -f yandex-lite-kit`, then `up`. |
 | A second button reset after lock-in | `/data` is wiped and root is gone. | Reboot only. Repeat the unlock on purpose if a wipe already happened. |
 | ADB torn down by a cloud sync | `Deactivate adb by quasmodrom config` on some builds. | Finish the lock-in before stopping lite-kit. |
-| Station placed on a guest SSID | It cannot reach silverstone, and it may not use this Unbound. | Join it to IoT. The §5.6 pass is what lets that VLAN reach silverstone. |
+| Station placed on a guest SSID | It may not use this Unbound. | Join it to IoT. Speaker HTTPS stays on VLAN 99 and does not need a path to silverstone. |
 
 ---
 
@@ -233,7 +233,7 @@ A second button factory reset wipes `/data` and removes the lock-in. If the loca
 
 ## 9. Rollback
 
-- **OPNsense:** delete `unbound-iot-acl.conf` from `unbound.opnsense.d`, restart Unbound, and delete any global Host Overrides for these names. Delete the LAN-to-speaker passes. IoT DHCP DNS was already OPNsense.
+- **OPNsense:** delete `yandex-iot-acl.conf` from `unbound.opnsense.d` and from `/var/unbound/etc`, then restart Unbound. Leave the LAN-to-IoT policy as it was. IoT DHCP DNS was already OPNsense.
 - **silverstone:** `docker compose -f stacks/yandex-station.yaml --env-file /mnt/spool/apps/config/yandex-station/v3rt3p/.env down`. Stop lite-kit if it is still running. Ignore `stop.sh`'s advice to return router DNS to automatic.
 - **Midi:** a factory reset wipes `/data` and cannot revert the firmware version. If a build cannot be brought under control, the reset path is the only documented escape and is irreversible at the firmware layer.
 - **Leak:** never publish `/data/quasar/devices.json`, device keys, MAC, serial, or Wi-Fi password. The domain list and `ca.key` are already public upstream; the device identity is not.
@@ -253,6 +253,6 @@ A second button factory reset wipes `/data` and removes the lock-in. If the loca
 
 ## 11. Security actions (out of band, not part of the stack change)
 
-- Root SSH accepts only the key in `contrib/etc/dropbear/authorized_keys`. Network ADB on `:5555` is still unauthenticated. Neither may be port-forwarded or placed on an untrusted network. OPNsense rules in §5.6 cover traffic from LAN to the speaker and from IoT to silverstone.
+- Root SSH accepts only the key in `contrib/etc/dropbear/authorized_keys`. Network ADB on `:5555` is still unauthenticated. Neither may be port-forwarded or placed on an untrusted network. LAN may reach the speaker. IoT may not initiate connections to LAN.
 - The v3rt3p `https-proxy` **intentionally uses the known-compromised eMudhra/emSign CA**. The tagged local zones send IoT clients of this Unbound to that proxy for the speaker names. LAN clients are not tagged. **The same proxy is not reused for any public host.** TLS key-logging in the proxy is disabled by default; enable it only in authorized test environments and lock/remove the log file.
 - The eMudhra tradeoff is a deliberate owner choice made knowingly, overriding the earlier recommendation to use a self-generated CA; it is documented here so a future reader understands both the rationale and the weakness.
