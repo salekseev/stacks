@@ -58,9 +58,21 @@ services:
       # HINDSIGHT_API_LLM_API_KEY = this stack's codex-lb key. It lives in
       # /run/secrets/hindsight_env: the ONE LLM var allowed there. Routing and
       # tuning stay here as the single source of truth.
-      HINDSIGHT_API_LLM_PROVIDER: openai
+      # openai-responses (/v1/responses), not openai (chat/completions): it is
+      # the Codex wire format, so codex-lb relays instead of translating, and it
+      # carries reasoning as a first-class item, so reflect's tool loop keeps its
+      # reasoning effort (chat/completions rejects effort + tools on some
+      # reasoning models, hindsight #2983). Stateless (store=False), so no
+      # request is bound to one pooled account.
+      HINDSIGHT_API_LLM_PROVIDER: openai-responses
       HINDSIGHT_API_LLM_BASE_URL: http://codex-lb:2455/v1
       HINDSIGHT_API_LLM_MODEL: gpt-6-luna
+      # Structured output without response_format on chat/completions members.
+      # Member 1's server rejects response_format ("no constrained decoding"),
+      # which failed every reflect after failover. false = schema in the prompt
+      # only. Global, but read only by the openai provider (member 1 here); the
+      # openai-responses primary keeps native text.format.
+      HINDSIGHT_API_LLM_OPENAI_COMPATIBLE_JSON_MODE: "false"
       # Member 1: local vLLM on the 192.168.1.147 box (that host is NOT
       # silverstone). REASONING_EFFORT=none because gemma-4 otherwise emits a
       # thinking block that burns tokens on fact extraction.

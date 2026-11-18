@@ -206,6 +206,14 @@ The edge network is IPv4-only (`EnableIPv6=false`, `172.31.255.248/29`). The con
 
 **Hindsight primary model (supersedes §7.1's `keep gpt-5.6-luna`): `gpt-6-luna`.** codex-lb's model registry describes it as "Fast and affordable model for easier tasks" (272k context, default effort medium, levels low…max, same as 5.6-luna). Hindsight's reflect leaderboard scores it 89.3 at $4.12/1k cases, against gpt-5.6-luna's 86.7 at $7.46. `gpt-6.1-terra` was rejected: the registry describes it as tuned for "visual understanding and computer use", and it scores 78.7 at $47/1k.
 
+**Hindsight cutover verified (Task 12).** After the redeploy:
+- the env shows `openai` / `codex-lb` / `gpt-6-luna`, there is no `CODEX_HOME` and no `/codex` mount, and `/health` is healthy;
+- a real reflect was served by the primary; codex-lb logged 5 `gpt-6-luna` calls at effort `high`, and consolidation at `medium`, all `success`.
+
+**Failover defect found, and fixed in the next PR.** With codex-lb stopped, the chain did advance to member 1. vLLM `gemma-4-12b` then answered `400 "response_format json_object/json_schema is not supported (no constrained decoding)"`, so reflect failed. This existed before the cutover, but the `opportunistic` key makes it routine: any pool refusal would fail reflect. The fix:
+- primary `HINDSIGHT_API_LLM_PROVIDER: openai-responses`. This is hindsight 1.2.1's `OpenAIResponsesLLM`, which sends `/v1/responses`, `store=False`, `reasoning={"effort":…}`, `text.format`. Probed through codex-lb with the hindsight key: strict `json_schema` plus `reasoning.effort=high` returned 200 `{"city":"Paris"}`;
+- `HINDSIGHT_API_LLM_OPENAI_COMPATIBLE_JSON_MODE: "false"`. It is global, but only `openai_compatible_llm.py` reads it, so it moves member 1 to schema-in-prompt without touching the primary. `_parse_llm_members` has no per-member variant.
+
 **Tooling note.** `hindsight:1.2.1-slim` ships no `curl`; in-container probes use `python3` with `urllib`.
 
 **Embeddings.** The subscriptions cannot serve embeddings; the Codex backend has none. codex-lb's `/v1/embeddings` forwards only to separately configured model sources. Hindsight keeps local TEI. `HINDSIGHT_API_EMBEDDINGS_OPENAI_API_KEY` and the LiteLLM comment blocks in hindsight's secret file are unused leftovers.
