@@ -79,7 +79,7 @@ Both created through TrueNAS middleware (`pool.dataset.create`, `share_type: APP
 |---|---|---|---|
 | `spool/apps/data/codex-lb` | `/mnt/spool/apps/data/codex-lb` | `/var/lib/codex-lb` | SQLite DB, archives (`CODEX_LB_DATA_DIR` default) |
 | `spool/apps/config/codex-lb` | `.../config/codex-lb/codex-lb/` | `/etc/codex-lb` in `codex-lb` | `encryption.key` |
-| | `.../config/codex-lb/cloudflared/` | `/etc/cloudflared` in `cloudflared` | tunnel credentials |
+| | `.../config/codex-lb/cloudflared/` | `/etc/cloudflared/creds` in `cloudflared` | `tunnel.json` (tunnel credentials; same layout as hermes) |
 
 Each container mounts only its own subdirectory, so codex-lb never sees the tunnel credentials and cloudflared never sees the key.
 
