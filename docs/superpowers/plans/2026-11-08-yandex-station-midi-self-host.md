@@ -309,7 +309,7 @@ Expected: the leaf issuer is `CN=EM EV TLS CA - G3C`.
 
 ## Task 7: DNS check and spoken request **[USER SHELL]**
 
-The firewall passes were installed in Task 2. This step checks the view again now that NTP is listening.
+The Host Overrides are in place. This step checks them again. `ntp.yantp.net` is OPNsense at `192.168.99.1`.
 
 - [ ] **Step 1: dig from a host on `192.168.99.0/24`, and once from a LAN host:**
 
@@ -322,7 +322,7 @@ dig @192.168.1.1 quasar.yandex.net A +short
 
 From the same IoT host, repeat the `ntp.yantp.net` A query with `dig -6` against OPNsense's IoT IPv6 address.
 
-Expected: the IoT A queries print `192.168.1.10`, including the IPv6 transport. The AAAA query prints nothing. The LAN query does not print `192.168.1.10`.
+Expected: `quasar.yandex.net` A prints `192.168.99.10`. `ntp.yantp.net` A prints `192.168.99.1`, including the IPv6 transport. The AAAA query prints nothing.
 
 - [ ] **Step 2: reboot the Midi, not a factory reset**
 

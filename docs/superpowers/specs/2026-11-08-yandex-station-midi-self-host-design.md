@@ -24,7 +24,7 @@ The owner asked for a comparison; **the v3rt3p Compose stack was selected** as t
 
 | Backend | What it is | Why v3rt3p was chosen | Residual cost |
 |---|---|---|---|
-| **v3rt3p stack** (selected) | 6-container Compose plus `dnsmasq` on host port `1153` and `ntp-server`: `https-proxy` (eMudhra CA) + `quasar-server` + `processor` (LLM) + `quasistreaming-gigam` (ASR) + `supertonic-tts` (TTS) + `postgres`. OPNsense forwards the Yandex zones to that dnsmasq | Multi-container; supplied container builds and **no mandatory GPU**; its stock `https-proxy` uses the **compromised eMudhra CA, which the station trusts out of the box** — this removes the firmware-dependent self-generated-CA step | More services/state to maintain; needs the Supertonic 3 tree from Hugging Face, prompts, Postgres, the forward zones, and NTP; the stock compromised-CA proxy is a deliberate security tradeoff (see §5.5/§11) |
+| **v3rt3p stack** (selected) | Compose: `https-proxy` (eMudhra CA) + `quasar-server` + `processor` (LLM) + `quasistreaming-gigam` (ASR) + `supertonic-tts` (TTS) + `postgres`. `ntp.yantp.net` is a Host Override to OPNsense `192.168.99.1` | Multi-container; supplied container builds and **no mandatory GPU**; its stock `https-proxy` uses the **compromised eMudhra CA, which the station trusts out of the box** — this removes the firmware-dependent self-generated-CA step | More services/state to maintain; needs the Supertonic 3 tree from Hugging Face, prompts, Postgres, and the Host Overrides; the stock compromised-CA proxy is a deliberate security tradeoff (see §5.5/§11) |
 | quasard source build (superseded) | Single Python app on silverstone (`uv`+`torch`), Yandex Music + cloud Edge TTS; a self-generated CA in the station's trust store | Smaller runtime but a self-generated CA needs a **firmware-dependent root exploit** the Nov-4 build may not accept | Baseline draft only; kept in §3/§11 for traceability |
 | Host Python + systemd | Fewer containers, but a second deployment lifecycle outside this repo's stack convention | Not recommended | — |
 
@@ -72,7 +72,7 @@ The customization is documented by independent community sources, cross-referenc
 Two consequences:
 
 1. **The trust step is no longer the load-bearing unknown.** The older quasard design depended on a self-generated CA being rooted into the station's trust store via a firmware-dependent exploit — and the Nov-4 build was shown to reject self-signed servers. v3rt3p sidesteps that entirely: the station trusts the `https-proxy` because the eMudhra CA is **already in the device**, so there is no new firmware trust step. The residual firmware question is narrow: *does 0.373 still validate the eMudhra CA?* — which is very likely but must be confirmed in Phase 0.
-2. **Phase 0 is still required, and it is an unlock gate.** The root unlock (Phase 1) is unchanged. NTP is required once the station uses the local backend: `ntp.yantp.net` must resolve to silverstone (§6). The forward list includes that name from the start. The button reset does not wait on the `ntp-server` container. lite-kit's own DNS is not what the speaker queries.
+2. **Phase 0 is still required, and it is an unlock gate.** The root unlock (Phase 1) is unchanged. NTP is required once the station uses the local backend: the Host Override for `ntp.yantp.net` is OPNsense at `192.168.99.1`, which already answers UDP 123. lite-kit's own DNS is not what the speaker queries.
 
 ---
 
@@ -103,10 +103,11 @@ Yandex Station Midi (and later speakers) on IoT 192.168.99.0/24
           → quasar-server (:31115, control API :31116)
           → processor (cloud OpenAI-compatible LLM)
           → quasistreaming-gigam (ASR, GigaAM)   · supertonic-tts
-          · postgres · ntp-server udp/123
+          · postgres
+          NTP: ntp.yantp.net → OPNsense 192.168.99.1 (not a container)
 ```
 
-**Phase separation is a handoff of :80 and :443, not of DNS.** The Query Forwarding rows are in place before the button reset and stay. dnsmasq on port 1153 can run the whole time. lite-kit binds `:80/:443` on `192.168.1.10` until root is locked in, then it is **stopped before** `docker compose up` of https-proxy. `https-proxy` takes those ports. UDP/123 is free during the unlock; `ntp-server` starts with the rest of the stack. The forwards already point `ntp.yantp.net` at silverstone, so cutover does not change the speaker's DNS server.
+**Phase separation is a handoff of :80 and :443, not of DNS.** The Host Overrides are in place before the button reset and stay. lite-kit binds `:80/:443` on `SPEAKER_IP` until root is locked in, then it is **stopped before** `docker compose up` of https-proxy. `https-proxy` takes those ports. `ntp.yantp.net` stays on OPNsense `192.168.99.1` through the unlock and the cutover.
 
 ---
 
@@ -142,7 +143,7 @@ The stand is stopped with `stop.sh` after root is locked in and has survived a r
 
 ### 5.4 v3rt3p as the Phase 2 backend
 
-Six cooperating services from the v3rt3p docs, plus dnsmasq and the NTP server this deployment adds:
+Six cooperating services from the v3rt3p docs. NTP is OPNsense, not a container:
 
 - **`https-proxy`** — NGINX on `:80`/`:443` using the eMudhra CA. Per-domain certs are generated at runtime. `YANDEX_UPSTREAM_URL` replaces the `quasar:31120` directive, and listed names are forwarded to `quasar-server:31115`. A `!` name that arrives at the proxy is still terminated and then proxied to the real origin; this plan keeps those names on public DNS so they never arrive.
 - **`quasar-server`** — activation, sync, and dialogue. Device traffic arrives on `31115`. The control API on `31116` is published on `192.168.1.10` and is part of the firewall scope in §5.6.
@@ -151,7 +152,7 @@ Six cooperating services from the v3rt3p docs, plus dnsmasq and the NTP server t
 - **`supertonic-tts`** — local OpenAI-compatible TTS. Voices at the pinned README are `M1`–`M5` and `F1`–`F5`. Assets are the Hugging Face Supertonic 3 tree mounted read-only at `/assets`.
 - **`postgres`** — speaker and state DB.
 - **`dnsmasq`** — `4km3/dnsmasq:2.90-r3`, published on `192.168.1.10` port `1153`. Speaker names answer `192.168.1.10`. Every other name in a forwarded zone goes to `1.1.1.1` and `1.0.0.1`.
-- **`ntp-server`** — required with the local backend, not a second optional profile. `cturra/ntp`, UDP `123` on `192.168.1.10`.
+- **NTP** — OPNsense on the IoT gateway `192.168.99.1` (UDP 123, stratum 3). The Host Override for `ntp.yantp.net` names that address. The stack does not run `ntp-server`.
 
 **VRAM budget on the 4 GB box:** the LLM is codex-lb and TTS is local and small, so the GPU stays free unless GigaAM is switched to CUDA. Prompt templates and the Supertonic 3 tree are staged on the host before `up`.
 
@@ -168,8 +169,8 @@ Two trust mechanisms, one per phase:
 
 ### 5.6 Isolation tier & security
 
-- **Domain scope:** OPNsense Query Forwarding sends `kinopoisk.ru`, `yandex.ru`, `strm.yandex.ru`, `ott.yandex.ru`, `yandex.net`, `yastatic.net`, and each speaker name to dnsmasq on `192.168.1.10` port `1153`. dnsmasq returns `192.168.1.10` for every non-`!` name in `domains/yandex.txt` except `quasar:31120`, plus `ntp.yantp.net`. An `address=` line with only an IPv4 answer leaves AAAA empty for that name. Other names inside the parent zones recurse to `1.1.1.1`. These rows apply to every client of this Unbound. The disabled blank-domain rows and the DNS-over-TLS `.` forward stay.
-- **Firewall, for packets that ingress OPNsense.** On IoT (`opt1`), above the IoT-to-LAN block: pass `192.168.99.0/24` to `192.168.1.10` TCP `80,443,31116` and UDP `123`. On LAN, above the default allow: pass `192.168.1.10` to the speaker TCP `2222,5555`; reject other LAN sources to the speaker on those ports. No pass for port `53` to silverstone. No WAN forward of `80`, `443`, `123`, `31116`, `2222`, or `5555`. These passes exist before the button reset, because the speaker is on another VLAN and cannot reach lite-kit without them.
+- **Domain scope:** OPNsense Query Forwarding sends `kinopoisk.ru`, `yandex.ru`, `strm.yandex.ru`, `ott.yandex.ru`, `yandex.net`, `yastatic.net`, and each speaker name to dnsmasq on `192.168.1.10` port `1153`. The Host Override for `ntp.yantp.net` is `192.168.99.1`. An `address=` line with only an IPv4 answer leaves AAAA empty for that name. Other names inside the parent zones recurse to `1.1.1.1`. These rows apply to every client of this Unbound. The disabled blank-domain rows and the DNS-over-TLS `.` forward stay.
+- **Firewall, for packets that ingress OPNsense.** On LAN, above the default allow: pass `192.168.1.10` to the speaker TCP `2222,5555`; reject other LAN sources to the speaker on those ports. Speaker HTTPS stays on the IoT VLAN (`SPEAKER_IP` TCP `80`, `443`, `31116`). NTP is the speaker talking to OPNsense at `192.168.99.1` UDP `123`, so there is no IoT-to-LAN pass for port `123`. No pass for port `53` to silverstone. No WAN forward of `80`, `443`, `123`, `31116`, `2222`, or `5555`.
 - **VLAN 99 crosses the firewall.** silverstone is on untagged LAN. The speaker is on VLAN 99. Packets between them ingress OPNsense, so the rules above see them. Binding to `192.168.1.10` keeps the sockets off the Tailscale address.
 - **Passwordless SSH is a hazard:** Dropbear starts with `-B` (root has an **empty password**). Never port-forward `:2222` or `:5555`. Optional later hardening: `/root/.ssh/authorized_keys` and remove `-B`.
 - **Do not expose the silverstone ports to the WAN.** Keep the Midi off any guest or external network.
@@ -196,8 +197,8 @@ Order:
 3. Button reset, then the in-app Wi-Fi join onto IoT, while lite-kit is still listening on `:80/:443`. Root ADB is checked only after that join. All `adb` commands run on silverstone, so there is one ADB server.
 4. Lock in root (markers, OTA disable, Dropbear) and confirm a reboot still yields `uid=0`.
 5. `stop.sh`. Leave the forwarding rows and the IoT DHCP DNS in place.
-6. `docker compose up` the stack. https-proxy and ntp-server take the ports the forwards already name.
-7. From any host, `dig @192.168.99.1 ntp.yantp.net A` prints `192.168.1.10`.
+6. `docker compose up` the stack. https-proxy takes the speaker address the Host Overrides already name.
+7. From any host, `dig @192.168.99.1 ntp.yantp.net A` prints `192.168.99.1`.
 8. Reboot the Midi. This is a normal reboot, not the button factory reset. `/data` has to survive. Ask it a question and confirm `:5555` still answers `uid=0`.
 
 A second button factory reset wipes `/data` and removes the lock-in. If the local backend cannot be reached without one, stop and treat a new unlock cycle as a deliberate repeat of steps 2–4, with lite-kit listening on `:80/:443` again. The forwarding rows stay. The root-ADB payload comes from lite-kit, so do not factory-reset while only https-proxy is answering those names.
@@ -211,7 +212,7 @@ A second button factory reset wipes `/data` and removes the lock-in. If the loca
 | 0.373 still validates the eMudhra CA (expected) | Local impersonation works without installing a CA. | Confirm with `openssl s_client` after the stack is up, then with a spoken request. |
 | eMudhra CA rejected on 0.373 | Activation through the proxy fails. | Stop. This plan does not downgrade and does not install a replacement CA. |
 | No `uid=0` after the app Wi-Fi join | The unlock did not take. | Stop. `firmware/` is empty on purpose, so there is no OTA-AUTO path to wait for. |
-| `ntp.yantp.net` still resolves publicly | dnsmasq is not answering port 1153, or the forward row still points at 127.0.0.1. | `dig @192.168.1.10 -p 1153 ntp.yantp.net A` must print `192.168.1.10` before the OPNsense query will. |
+| `ntp.yantp.net` still resolves publicly | The Host Override is missing or still names another address. | `dig @192.168.99.1 ntp.yantp.net A` must print `192.168.99.1`. OPNsense on that address already answers UDP 123. |
 | First GigaAM start has no egress | The checkpoint never lands in the cache. | Allow outbound HTTPS once, or pre-warm the cache as the gigam README describes. Do not copy legacy ONNX files into it. |
 | No transcript | gigam failed (download, audio format, CPU/RAM). | Inspect `v3rt3p-gigam`. |
 | No answer / no speech | `processor` cannot reach codex-lb, or Supertonic assets/voice are missing. | `OPENAI_API_KEY` is the codex-lb `yandex` key. `403 model_not_allowed` means `gpt-6-luna` is not on that key. Voice is `M1`–`M5` or `F1`–`F5`. `onnx/` and `voice_styles/` must sit directly under the assets mount. |
@@ -228,9 +229,9 @@ A second button factory reset wipes `/data` and removes the lock-in. If the loca
 2. **Unlock:** after the button reset and the in-app Wi-Fi join, on silverstone, `adb connect <MIDI_IP>:5555` and `adb shell id` print `uid=0(root)`. Record `ro.build.display.id` and `ro.product.cpu.abi`. Anything else is a stop.
 3. **Lock-in:** `adb shell sh /data/opt/yandex-noupdate.sh status` reports updates removed, the applier stubbed, and the OTA key replaced, and `maind --updatesd` is not running. After a reboot, `uid=0` and `ssh -p 2222 root@<MIDI_IP>` still work.
 4. **Static:** from the repo root, `./scripts/validate-stack.sh yandex-station`.
-5. **Runtime:** `docker compose -f stacks/yandex-station.yaml --env-file /mnt/spool/apps/config/yandex-station/v3rt3p/.env up -d`, then `ps`. Services report `Up`. This stack defines no healthchecks, so Compose will not say `healthy`. `https-proxy` listens on `192.168.1.10:80` and `:443`, dnsmasq on `192.168.1.10:1153`, `ntp-server` on UDP `123`. Nothing in this stack listens on port `53`.
+5. **Runtime:** `docker compose -f stacks/yandex-station.yaml --env-file /mnt/spool/apps/config/yandex-station/v3rt3p/.env up -d`, then `ps`. Services report `Up`. This stack defines no healthchecks, so Compose will not say `healthy`. `https-proxy` holds `SPEAKER_IP` on TCP 80 and 443. Nothing in this stack listens on port `53` or UDP `123`. NTP is OPNsense at `192.168.99.1`.
 6. **Trust:** `openssl s_client -connect 192.168.1.10:443 -servername quasar.yandex.net` shows a leaf whose issuer is `EM EV TLS CA - G3C`.
-7. **DNS after cutover:** `dig @192.168.99.1 quasar.yandex.net A +short` and `dig @192.168.99.1 ntp.yantp.net A +short` print `192.168.1.10`. The AAAA query prints nothing. A LAN query of `quasar.yandex.net` also prints `192.168.1.10`.
+7. **DNS after cutover:** `dig @192.168.99.1 quasar.yandex.net A +short` prints `SPEAKER_IP` (`192.168.99.10`). `dig @192.168.99.1 ntp.yantp.net A +short` prints `192.168.99.1`. The AAAA query prints nothing.
 8. **End-to-end:** reboot the Midi (not a factory reset), ask it a question, and confirm `adb shell id` is still `uid=0(root)`.
 
 ---

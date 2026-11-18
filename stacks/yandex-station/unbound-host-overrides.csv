@@ -2,7 +2,7 @@ enabled,hostname,domain,rr,mxprio,mx,ttl,server,txtdata,addptr,description
 1,quasar,yandex.net,A,,,,192.168.1.10,,0,yandex station
 1,quasar,yandex.ru,A,,,,192.168.1.10,,0,yandex station
 1,scbh,yandex.net,A,,,,192.168.1.10,,0,yandex station
-1,ntp,yantp.net,A,,,,192.168.1.10,,0,yandex station
+1,ntp,yantp.net,A,,,,192.168.99.1,,0,yandex station
 1,rpc.alice,yandex.net,A,,,,192.168.1.10,,0,yandex station
 1,uniproxy.alice,yandex.net,A,,,,192.168.1.10,,0,yandex station
 1,uniproxy-quic.alice,yandex.net,A,,,,192.168.1.10,,0,yandex station

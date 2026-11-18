@@ -3,8 +3,8 @@
 # Yandex Station self-hosted backend (v3rt3p). The speaker reaches this stack
 # on the IoT VLAN. https-proxy holds SPEAKER_IP (TCP 80 and 443). quasar-server
 # shares that network namespace so the control API on TCP 31116 is the same
-# address. ntp-server holds NTP_IP (UDP 123). Host Overrides must agree:
-# the HTTPS names and ntp.yantp.net are separate addresses.
+# address. ntp.yantp.net is a Host Override to OPNsense at 192.168.99.1,
+# which already serves NTP. This stack does not run an NTP server.
 #
 # ipvlan L2 parent is an SR-IOV virtual function on the LAN NIC (IOT_PARENT).
 # That function is an access port for VLAN 99, so container frames leave tagged.
@@ -13,7 +13,7 @@
 # stack network. https-proxy is on both, and quasar-server uses that namespace,
 # so those service names still resolve.
 #
-# Required in the env file: IOT_PARENT, SPEAKER_IP, NTP_IP.
+# Required in the env file: IOT_PARENT, SPEAKER_IP.
 #   docker compose -f stacks/yandex-station.yaml --env-file \
 #     /mnt/spool/apps/config/yandex-station/v3rt3p/.env up -d
 # (compose does NOT auto-read the config-dir .env; the flag is required).
@@ -21,7 +21,7 @@
 # rebuild from the vendored submodules.
 #
 # Build contexts are five vendored git submodules under stacks/yandex-station/.
-# postgres and ntp-server are registry images.
+# postgres is a registry image.
 # Design: docs/superpowers/specs/2026-11-08-yandex-station-midi-self-host-design.md
 # Plan:   docs/superpowers/plans/2026-11-08-yandex-station-midi-self-host.md
 
@@ -142,17 +142,6 @@ services:
       - /mnt/spool/apps/config/yandex-station/v3rt3p/prompts/prompt.handlebars:/prompt.handlebars:ro
       - /mnt/spool/apps/config/yandex-station/v3rt3p/prompts/prompt-state.handlebars:/prompt-state.handlebars:ro
       - /mnt/spool/apps/config/yandex-station/v3rt3p/prompts/prompt-functions.handlebars:/prompt-functions.handlebars:ro
-
-  # ntp.yantp.net is its own Host Override, so this address is not SPEAKER_IP.
-  ntp-server:
-    image: cturra/ntp:latest
-    container_name: v3rt3p-ntp
-    restart: unless-stopped
-    environment:
-      NTP_SERVERS: time1.google.com,time2.google.com,time.cloudflare.com
-    networks:
-      iot:
-        ipv4_address: ${NTP_IP:?set NTP_IP}
 
   # Healthchecks omitted by default (upstream images ship no proven probes for
   # these builds); add per service once a readiness signal is evidenced — the
