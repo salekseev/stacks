@@ -175,3 +175,39 @@ Unchanged. It stays on its Claude token.
 - Wire the yandex `processor` to codex-lb (PR #169).
 - Move Hermes or Open WebUI onto codex-lb for OpenAI models, if wanted.
 - A ZFS snapshot task covering both codex-lb datasets together.
+- `hs-decide-1-flash` decision model for hindsight (consolidation, reflect, pages), self-hosted if it fits silverstone's GPU. See §12.
+
+## 12. As-built (2026-11-18)
+
+Gateway deployed from PR #185. Where the deployment differs from §5–§7, this section wins.
+
+**Dashboard lock-down (supersedes the `break_glass_only` and unknown-identity-role parts of §5.3).** The doc pages used during design describe codex-lb's `main` branch. The deployed `1.24.0` has none of local sign-in policy, break-glass designation, unknown-identity default role, or Organisation settings: its `app/modules` has no `auth_providers`/dashboard-users module, and its `docs/authentication.md` names none of them. 1.24.0 is single-admin: any identity that arrives through cloudflared is admin, narrowed only by the Cloudflare Access policy, which allows one email. The fallback form on :2455 is reachable from `shared-services`, so it is hardened with what 1.24.0 has:
+- local password set, TOTP enrolled, **Require TOTP on login** on;
+- API key authentication on;
+- dashboard session lifetime 720 h (down from the 8760 h default);
+- guest access off. Telemetry is pinned off by `CODEX_LB_TELEMETRY_ENABLED`.
+
+Verified from the settings table, read-only. Revisit `break_glass_only` when Renovate brings codex-lb ≥ 1.25.
+
+**Trust boundaries verified** before bootstrap, from `shared-services`:
+- `/v1/models` with no key returns `401`;
+- `/api/accounts` with a forged `Cf-Access-Authenticated-User-Email` returns `401`, the same as with no header;
+- the edge hostname without an Access session returns `302` to the Access login.
+
+The edge network is IPv4-only (`EnableIPv6=false`, `172.31.255.248/29`). The container runs as `568:568` with no uid fallback. `encryption.key` lives only on the config dataset.
+
+**Pool.** Three accounts, all active: three distinct users across two ChatGPT workspace accounts, plans `business`/`team`/`team`. Per-account routing policies are `preserve`, `normal` and `burn_first`. These are workspace seats, so the workspace admins' visibility and terms apply (operator to confirm none is an employer seat).
+
+**Hindsight key.**
+- Traffic class `opportunistic`: per codex-lb `app/core/balancer/logic.py`, it may only use expendable capacity (`burn_first` → `normal` → `preserve`, subject to reserve floors) and is otherwise refused with `opportunistic burn window closed`. That refusal falls through to vLLM member 1.
+- Model allowlist: `gpt-5.6-luna`, `gpt-6-luna`.
+- Probes from inside the hindsight container: `gpt-5.6-luna` returns `200 "OK"`; `gpt-6-luna` at `high` and at `medium` returns `200 "OK"`; `gpt-5.5` returns `403 model_not_allowed`.
+- The future yandex key should be `foreground`: it is latency-sensitive with no failover.
+
+**Hindsight primary model (supersedes §7.1's `keep gpt-5.6-luna`): `gpt-6-luna`.** codex-lb's model registry describes it as "Fast and affordable model for easier tasks" (272k context, default effort medium, levels low…max, same as 5.6-luna). Hindsight's reflect leaderboard scores it 89.3 at $4.12/1k cases, against gpt-5.6-luna's 86.7 at $7.46. `gpt-6.1-terra` was rejected: the registry describes it as tuned for "visual understanding and computer use", and it scores 78.7 at $47/1k.
+
+**Tooling note.** `hindsight:1.2.1-slim` ships no `curl`; in-container probes use `python3` with `urllib`.
+
+**Embeddings.** The subscriptions cannot serve embeddings; the Codex backend has none. codex-lb's `/v1/embeddings` forwards only to separately configured model sources. Hindsight keeps local TEI. `HINDSIGHT_API_EMBEDDINGS_OPENAI_API_KEY` and the LiteLLM comment blocks in hindsight's secret file are unused leftovers.
+
+**hs-decide-1-flash feasibility (follow-up input).** silverstone's GPU is an NVIDIA RTX A400 (4 GB). About 1.4 GB is used by Frigate, ffmpeg and two TEI routers, which leaves about 2.6 GB. A 0.8B bf16 model needs about 1.6 GB for weights alone. It only fits with a reduced `--max-model-len`, a lowered `--gpu-memory-utilization`, `--enforce-eager`, and `HINDSIGHT_API_DECISION_MODEL_MAX_REQUEST_TOKENS` sized to match. The card has no FP8. Frigate memory spikes are the main risk. The follow-up spec must measure before committing.

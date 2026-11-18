@@ -16,6 +16,14 @@
 
 Two PRs are needed because Portainer deploys from `master`: the gateway must be running and have minted hindsight's key before hindsight can point at it.
 
+> **As-built deviations (2026-11-18).** See spec §12 for the evidence. Where this plan and §12 disagree, §12 wins.
+> - **Task 7 Steps 3–4:** codex-lb 1.24.0 has no local sign-in policy, break-glass designation or unknown-identity role. Done instead: TOTP enrolled and required on login, API key auth on, session lifetime 720 h.
+> - **Task 10 Step 1:** the `hindsight` key is traffic class `opportunistic`, allowlist `gpt-5.6-luna` + `gpt-6-luna`.
+> - **Task 10 Step 3 and anything probing from the hindsight container:** the image has no `curl`; use `python3` with `urllib`.
+> - **Task 11:** the primary model is `gpt-6-luna`, not `gpt-5.6-luna`.
+> - **Task 12 Step 4:** with an `opportunistic` key, reflect landing on vLLM is correct whenever codex-lb logs `opportunistic burn window closed`; check before calling it a failure. Expect `gpt-6-luna` in the request log.
+> - **Git, gh and the classifier:** in this session, a PreToolUse hook rewrites git and `gh` calls, so auto mode refuses them; the operator runs those commands with `!`.
+
 ---
 
 ## Environment notes for the implementer
