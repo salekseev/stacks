@@ -419,7 +419,17 @@ Open `https://codex-lb.alekseev.us`. Cloudflare Access prompts for login, then t
 
 - [ ] **Step 3: Set the break-glass local admin password `[USER]`**
 
-From the setup screen, create the local `admin` account with the bootstrap token and a strong password (store it in 1Password). Enable TOTP on it.
+From the setup screen, create the local `admin` account with the bootstrap token and a strong password (store it in 1Password), and enrol TOTP on it. Then in Settings → Organisation settings → local sign-in:
+1. Designate `admin` as the **break-glass** account.
+2. Set the policy to **`break_glass_only`**.
+
+The API answers `409 break_glass_requires_totp` if TOTP isn't enrolled yet. This matters because port 2455 is reachable from every `shared-services` container. Under this policy the password form admits only the TOTP-enrolled emergency account, at `/login?local=1`.
+
+Verify:
+```bash
+ssh silverstone.local 'sudo docker run --rm --network shared-services curlimages/curl:8.17.0 -s -o /dev/null -w "%{http_code}\n" http://codex-lb:2455/login'
+```
+Expected: the page loads (`200`) but shows no password form; the form is only at `/login?local=1`. Lockout recovery: `sudo docker exec -it codex-lb codex-lb admin reset-password admin`.
 
 - [ ] **Step 4: Refuse unknown identities `[USER]`**
 

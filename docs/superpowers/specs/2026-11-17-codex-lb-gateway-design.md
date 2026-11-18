@@ -97,7 +97,7 @@ The encryption key lives apart from the encrypted account tokens, so a copy of t
 | `CODEX_LB_TELEMETRY_ENABLED` | `false` | Default sends an anonymous snapshot to a third-party collector at start and every 24 h |
 
 Dashboard-managed settings (not env, applied once after first start and listed in the plan):
-- Local `admin` password set from the bootstrap token, kept as break-glass.
+- Local `admin` password set from the bootstrap token, TOTP enrolled, designated break-glass, then local sign-in policy → `break_glass_only`. Port 2455 is reachable from `shared-services`, so the password form must admit nothing but the TOTP-enrolled emergency account (only at `/login?local=1`). Host recovery CLI (`codex-lb admin reset-password`) remains for lockout.
 - Trusted-header provider `unknownIdentityRoleId` → `null`, so a new Cloudflare Access identity gets no access until it is added explicitly.
 - API Key Auth enabled.
 - Routing strategy **Capacity weighted**, sticky threads on.

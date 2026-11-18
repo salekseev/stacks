@@ -13,9 +13,12 @@
 #   /mnt/spool/apps/data/codex-lb                 -> SQLite DB (CODEX_LB_DATA_DIR default)
 #   /mnt/spool/apps/config/codex-lb/codex-lb/     -> encryption.key (auto-created 0600 on first start)
 #   /mnt/spool/apps/config/codex-lb/cloudflared/  -> tunnel.json (tunnel credentials)
-# Nothing published to host. The dashboard is reachable only through cloudflared
-# behind Cloudflare Access; upstream accounts are added via device-code OAuth, so
-# the 1455 OAuth callback port is never exposed.
+# Nothing published to host. SSO identity (the Cf-Access header) is honoured only
+# from cloudflared, which validates the Access JWT. Port 2455 is also reachable
+# from shared-services; there the dashboard offers only the break-glass local
+# login (local sign-in policy `break_glass_only`, TOTP-enrolled admin, set in the
+# dashboard after bootstrap). Upstream accounts are added via device-code OAuth,
+# so the 1455 OAuth callback port is never exposed.
 
 services:
 
@@ -102,6 +105,10 @@ networks:
   # cloudflared <-> codex-lb only. Fixed IPv4 /29 because it IS the trusted-proxy
   # CIDR above. IPv6 off: the daemon enables v6 on new bridges by default, and a
   # v6 hop would not match the v4 CIDR (dashboard would fail closed).
+  # The /29 sits at the top of the daemon pool (172.17.0.0/12, allocated
+  # sequentially from 172.16.0.0/24); the daemon refuses to allocate a network
+  # overlapping it while it exists, and ranges outside the pool risk colliding
+  # with routes this host cannot see.
   codex-lb-edge:
     enable_ipv6: false
     ipam:
