@@ -3,7 +3,7 @@
 services:
 
   cloudflared:
-    image: cloudflare/cloudflared:2026.10.7
+    image: cloudflare/cloudflared:2026.11.1
     container_name: cloudflared
     command: --config /etc/cloudflared/config.yml tunnel run
     user: 568:568
@@ -212,7 +212,7 @@ services:
     restart: unless-stopped
 
   tautulli:
-    image: ghcr.io/tautulli/tautulli:v2.18.2
+    image: ghcr.io/tautulli/tautulli:v2.19.1
     container_name: tautulli
     env_file:
       - stack.env
