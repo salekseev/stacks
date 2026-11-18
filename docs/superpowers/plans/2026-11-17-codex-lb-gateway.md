@@ -158,9 +158,12 @@ Substitute the two values recorded earlier: `<TUNNEL_UUID>` from Task 2 Step 3, 
 #   /mnt/spool/apps/data/codex-lb                 -> SQLite DB (CODEX_LB_DATA_DIR default)
 #   /mnt/spool/apps/config/codex-lb/codex-lb/     -> encryption.key (auto-created 0600 on first start)
 #   /mnt/spool/apps/config/codex-lb/cloudflared/  -> tunnel.json (tunnel credentials)
-# Nothing published to host. The dashboard is reachable only through cloudflared
-# behind Cloudflare Access; upstream accounts are added via device-code OAuth, so
-# the 1455 OAuth callback port is never exposed.
+# Nothing published to host. SSO identity (the Cf-Access header) is honoured only
+# from cloudflared, which validates the Access JWT. Port 2455 is also reachable
+# from shared-services; there the dashboard offers only the break-glass local
+# login (local sign-in policy `break_glass_only`, TOTP-enrolled admin, set in the
+# dashboard after bootstrap). Upstream accounts are added via device-code OAuth,
+# so the 1455 OAuth callback port is never exposed.
 
 services:
 
@@ -247,6 +250,10 @@ networks:
   # cloudflared <-> codex-lb only. Fixed IPv4 /29 because it IS the trusted-proxy
   # CIDR above. IPv6 off: the daemon enables v6 on new bridges by default, and a
   # v6 hop would not match the v4 CIDR (dashboard would fail closed).
+  # The /29 sits at the top of the daemon pool (172.17.0.0/12, allocated
+  # sequentially from 172.16.0.0/24); the daemon refuses to allocate a network
+  # overlapping it while it exists, and ranges outside the pool risk colliding
+  # with routes this host cannot see.
   codex-lb-edge:
     enable_ipv6: false
     ipam:
@@ -425,15 +432,13 @@ From the setup screen, create the local `admin` account with the bootstrap token
 
 The API answers `409 break_glass_requires_totp` if TOTP isn't enrolled yet. This matters because port 2455 is reachable from every `shared-services` container. Under this policy the password form admits only the TOTP-enrolled emergency account, at `/login?local=1`.
 
-Verify:
-```bash
-ssh silverstone.local 'sudo docker run --rm --network shared-services curlimages/curl:8.17.0 -s -o /dev/null -w "%{http_code}\n" http://codex-lb:2455/login'
-```
-Expected: the page loads (`200`) but shows no password form; the form is only at `/login?local=1`. Lockout recovery: `sudo docker exec -it codex-lb codex-lb admin reset-password admin`.
+Verify `[USER]`: in a private browser window (through Cloudflare Access), `/login` shows no password form, and `/login?local=1` shows it. The policy is enforced server-side by codex-lb, and the dashboard only reflects it. Lockout recovery: `sudo docker exec -it codex-lb codex-lb admin reset-password admin`.
+
+Exposure window, deliberate: between Task 6 and this step the policy is still `enabled`, but no account has a password yet. Setting the first one from anywhere but localhost requires the bootstrap token, which is printed only in the container logs (Step 1). Keep it out of anywhere but this step.
 
 - [ ] **Step 4: Refuse unknown identities `[USER]`**
 
-Settings → Organisation → **Reverse proxy**: set the default role for unknown identities to **none / refuse**. From now on, only identities you add explicitly get in, even if the Access policy is widened later.
+Settings → Organisation settings → **Reverse proxy**: set the default role for unknown identities to **none / refuse**. From now on, only identities you add explicitly get in, even if the Access policy is widened later.
 
 - [ ] **Step 5: Turn on proxy API-key auth `[USER]`**
 
