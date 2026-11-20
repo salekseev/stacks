@@ -51,7 +51,7 @@ Every `adb` command runs on silverstone (`ssh silverstone 'adb ...'`), so there 
 | `/mnt/spool/apps/config/yandex-station/v3rt3p/.env` | Secrets. Mode `600`, owned by the deploying user. | Task 1 |
 | `/mnt/spool/apps/config/yandex-station/v3rt3p/supertonic-tts-assets/` | Supertonic 3 tree, `onnx/` and `voice_styles/` at the top. | Task 1 |
 | `/mnt/spool/apps/config/yandex-station/v3rt3p/prompts/` | Three handlebars files from processor `a43e40e`. | Task 1 |
-| `/mnt/spool/apps/data/yandex-station/v3rt3p/{postgres-data,gigaam-cache}/` | Postgres data and the GigaAM download cache. | Task 1 |
+| `/mnt/spool/apps/data/yandex-station/v3rt3p/{quasar-server-db,gigaam-cache}/` | SQLite file `database.sqlite3` and the GigaAM download cache. | Task 1 |
 | `~/lite-kit/` on silverstone | Unlock HTTPS stand. Not a Compose service. Its dnsmasq is not the speaker's resolver. | Task 3, stopped in Task 6 |
 | OPNsense tagged local zones | `unbound-iot-acl.conf` for `192.168.99.0/24` and the current IoT IPv6 prefix. | Installed on lanner |
 | OPNsense IoT DHCP and firewall | Reservation on `opt1` with DNS `192.168.99.1` is still open. Firewall is the existing LAN-to-IoT allow. | Task 2 |
