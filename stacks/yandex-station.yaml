@@ -18,8 +18,11 @@
 # POSTGRES_PASSWORD and OPENAI_API_KEY are read at container start from
 # /mnt/spool/apps/config/yandex-station/v3rt3p/.env, mounted by the daemon as
 # the yandex_env secret. Portainer does not interpolate that file.
-# `up -d` pulls the five ghcr images. Append `--build` only for an air-gap
-# rebuild from the vendored submodules.
+# This file has no build: keys. Portainer Git deploy builds whenever build:
+# is present, and that build runs inside the Portainer container, which
+# cannot mkdir /docker. Images are pulled from ghcr. An air-gap rebuild is
+# stacks/yandex-station.build.yaml:
+#   docker compose -f stacks/yandex-station.yaml -f stacks/yandex-station.build.yaml build
 #
 # Build contexts are five vendored git submodules under stacks/yandex-station/.
 # postgres is a registry image.
@@ -31,12 +34,7 @@ services:
   # YANDEX_UPSTREAM_URL overrides the first line of domains/yandex.txt (generate.sh
   # "<LIST>_UPSTREAM_URL" contract). quasar-server listens in this namespace.
   https-proxy:
-    # image tag == short SHA of the submodule pin (built+pushed public by
-    # .github/workflows/v3rt3p-images.yml); bump both together. `up -d` pulls;
-    # `up -d --build` rebuilds from the vendored submodule (air-gap fallback).
     image: ghcr.io/salekseev/v3rt3p-https-proxy:2f27cb2
-    build:
-      context: ./yandex-station/https-proxy
     container_name: v3rt3p-https-proxy
     restart: unless-stopped
     environment:
@@ -50,8 +48,6 @@ services:
   # Shares https-proxy's namespace: 31115 and 31116 are on SPEAKER_IP.
   quasar-server:
     image: ghcr.io/salekseev/v3rt3p-quasar-server:4e778cb
-    build:
-      context: ./yandex-station/quasar-server
     container_name: v3rt3p-quasar-server
     restart: unless-stopped
     network_mode: service:https-proxy
@@ -111,9 +107,6 @@ services:
   # offloads to GPU (needs NVIDIA driver + Container Toolkit).
   quasistreaming-gigam:
     image: ghcr.io/salekseev/v3rt3p-quasistreaming-gigam:b0ffb57   # CPU variant
-    build:
-      context: ./yandex-station/quasistreaming-gigam
-      dockerfile: "${GIGAAM_DOCKERFILE:-Dockerfile.cpu}"
     container_name: v3rt3p-gigam
     restart: unless-stopped
     environment:
@@ -125,8 +118,6 @@ services:
   # TTS: self-hosted OpenAI-compatible service (Supertonic assets mounted RO).
   supertonic-tts:
     image: ghcr.io/salekseev/v3rt3p-supertonic-tts:171e703
-    build:
-      context: ./yandex-station/supertonic-tts
     container_name: v3rt3p-tts
     restart: unless-stopped
     environment:
@@ -139,8 +130,6 @@ services:
   # PROCESSOR_ prefix on the template paths).
   processor:
     image: ghcr.io/salekseev/v3rt3p-processor:a43e40e
-    build:
-      context: ./yandex-station/processor
     container_name: v3rt3p-processor
     restart: unless-stopped
     # quasar-server reaches this service by name on default. shared-services is
