@@ -67,12 +67,12 @@ The customization is documented by independent community sources, cross-referenc
 |---|---|---|
 | `0.369.1.46…20261013` | Oct 13 | ✅ trusted (verified on Midi) |
 | `0.369.1.50…20261021` | Oct 21 | ✅ trusted |
-| **`0.373.1.16…20261104`** (**the user's build**) | **Nov 4** | ✅ **expected to trust** eMudhra (a vendor/partner CA pre-bundled in the device; this is what the whole v3rt3p path relies on). **Not yet locally verified.** |
+| **`0.373.1.16…20261104`** (**the user's build**) | **Nov 4** | Not in the hackalice verified set (checked 2026-11-19). The self-hosted unlock guide says builds after 20–21 October 2026 reject that server certificate, so `get_sync_info` does not enable ADB. The Midi they verified is `0.369.1.46…20261013`. The same eMudhra chain is what `https-proxy` uses. Confirm with `uid=0` during unlock, then with `openssl s_client` after cutover. This plan does not downgrade. |
 
 Two consequences:
 
-1. **The trust step is no longer the load-bearing unknown.** The older quasard design depended on a self-generated CA being rooted into the station's trust store via a firmware-dependent exploit — and the Nov-4 build was shown to reject self-signed servers. v3rt3p sidesteps that entirely: the station trusts the `https-proxy` because the eMudhra CA is **already in the device**, so there is no new firmware trust step. The residual firmware question is narrow: *does 0.373 still validate the eMudhra CA?* — which is very likely but must be confirmed in Phase 0.
-2. **Phase 0 is still required, and it is an unlock gate.** The root unlock (Phase 1) is unchanged. NTP is required once the station uses the local backend: the tagged local zone for `ntp.yantp.net` answers OPNsense at `192.168.99.1`, which already answers UDP 123. lite-kit's own DNS is not what the speaker queries.
+1. **`0.373` is past the guide's certificate cutoff.** hackalice (2026-11-19) says a self-hosted unlock server is rejected on builds after 20–21 October 2026, before `get_sync_info`. The Midi they verified is `0.369.1.46…20261013`. v3rt3p's `https-proxy` uses that same eMudhra chain. The older quasard design depended on a self-generated CA, which the Nov-4 build was shown to reject. This plan still uses eMudhra and does not downgrade. `uid=0` after the app join is the gate.
+2. **Phase 0 is still required, and it is an unlock gate.** NTP is required once the station uses the local backend: the tagged local zone for `ntp.yantp.net` answers OPNsense at `192.168.99.1`, which answered stratum 3 on 2026-11-18. lite-kit's own DNS is not what the speaker queries. The Midi reset is: power off, hold the center touch button or the rear microphone button, apply power, and wait for the spoken reset. The phone stays on the LAN. Dropbear's autostart is `/etc/init.d/S99zdropbear` on the root filesystem, because `rcS` runs `/etc/init.d/S??*`.
 
 ---
 
@@ -171,7 +171,7 @@ Two trust mechanisms, one per phase:
 - **Domain scope:** `unbound-iot-acl.conf` tags each speaker name. Only clients in `192.168.99.0/24` (and the current IoT IPv6 prefix) receive the local A records. LAN clients, including the phone that runs the Yandex app, keep public answers for `login.yandex.ru`, `oauth.yandex.ru`, and the rest. A `static` zone with no AAAA record leaves AAAA empty for a tagged client. Parent zones are not forwarded. Verified 2026-11-18.
 - **Firewall.** LAN (`192.168.1.0/24`) may reach IoT (`192.168.99.0/24`). IoT may not initiate connections to LAN. That policy is accepted for this deployment. No extra pass or reject is added for TCP `2222` or `5555`. silverstone reaches the speaker because it is on LAN. Speaker HTTPS stays on the IoT VLAN (`SPEAKER_IP` TCP `80`, `443`, `31116`) and does not ingress OPNsense. NTP is the speaker talking to OPNsense at `192.168.99.1` UDP `123`, so there is no IoT-to-LAN pass for port `123`. No pass for port `53` to silverstone. No WAN forward of `80`, `443`, `123`, `31116`, `2222`, or `5555`.
 - **The speaker and `192.168.99.10` are both on VLAN 99.** Do not add `192.168.99.10` to a host interface. TrueNAS nginx listens on `0.0.0.0:80` and `:443`, and `ens1f0v2` must keep IPv6 disabled so the UI is not reachable from the IoT VLAN.
-- **SSH is key-only.** Dropbear starts with `-s -D /data/opt/etc/dropbear`. That directory holds `authorized_keys`. Root's home is on the read-only rootfs, so the key is not copied to `/root/.ssh`. The private key stays in 1Password. Never port-forward `:2222` or `:5555`. ADB on `:5555` is still unauthenticated.
+- **SSH is key-only.** Dropbear is started by `/etc/init.d/S99zdropbear` on the root filesystem (`rcS` runs `/etc/init.d/S??*`). The command is `-s -D /data/opt/etc/dropbear`. That directory holds `authorized_keys`. The guide's default is `-B` (empty password). This deployment does not use `-B`. Root's home is on the read-only rootfs, so the key is not copied to `/root/.ssh`. The private key stays in 1Password. Never port-forward `:2222` or `:5555`. ADB on `:5555` is still unauthenticated.
 - **Do not expose the silverstone ports to the WAN.** Keep the Midi off any guest or external network.
 - **Compromised-CA hygiene (§11):** do not reuse the eMudhra approach for any device outside this one; keep the proxy local; lock or remove the key-log dir if TLS key-logging is enabled.
 
@@ -205,7 +205,8 @@ A second button factory reset wipes `/data` and removes the lock-in. If the loca
 | Condition | Behavior | Mitigation |
 |---|---|---|
 | 0.373 still validates the eMudhra CA (expected) | Local impersonation works without installing a CA. | Confirm with `openssl s_client` after the stack is up, then with a spoken request. |
-| eMudhra CA rejected on 0.373 | Activation through the proxy fails. | Stop. This plan does not downgrade and does not install a replacement CA. |
+| eMudhra CA rejected on 0.373 | The unlock TLS handshake ends with `unknown_ca`, and `get_sync_info` never runs. The same chain is what `https-proxy` presents. | Stop. This plan does not downgrade and does not install a replacement CA. |
+| Speaker resolves `quasar.yandex.net` on the public internet after the first sync | `get_sync_info` installed forwarders `77.88.8.x`, as documented for Mini 2 `0.369`. | Keep IoT DNS to `192.168.99.1` only. The first query after a wiped `/data` still uses DHCP DNS. |
 | No `uid=0` after the app Wi-Fi join | The unlock did not take. | Stop. `firmware/` is empty on purpose, so there is no OTA-AUTO path to wait for. |
 | `ntp.yantp.net` still resolves publicly | The tagged zone is missing, or the query did not come from `192.168.99.0/24`. | `dig @192.168.99.1 ntp.yantp.net A` from an IoT source must print `192.168.99.1`. OPNsense on that address already answers UDP 123. |
 | First GigaAM start has no egress | The checkpoint never lands in the cache. | Allow outbound HTTPS once, or pre-warm the cache as the gigam README describes. Do not copy legacy ONNX files into it. |

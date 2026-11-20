@@ -6,24 +6,26 @@
 
 **Spec:** `docs/superpowers/specs/2026-11-08-yandex-station-midi-self-host-design.md`
 
-**Status:** Repo files are on `feature/yandex-station-midi-self-host`. On 2026-11-18 the tagged Unbound file was installed on lanner and the global Host Overrides were removed. A LAN query for these names is public. A query sourced from `192.168.99.1` receives the speaker addresses. LAN may reach IoT. IoT may not initiate connections to LAN. No extra pass or reject was added for TCP `2222` or `5555`. Device unlock and the silverstone deploy are still ahead. This plan does not downgrade firmware and does not factory-reset a second time. There is no dnsmasq service and no Query Forwarding file.
+**Status:** Merged to `master` on 2026-11-18 (`a4fb250`). The tagged Unbound file is installed on lanner. A LAN query for these names is public. A query sourced from `192.168.99.1` receives the speaker addresses. `ntpdate -q 192.168.99.1` from lanner returned stratum 3. LAN may reach IoT. IoT may not initiate connections to LAN. The speaker unlock and the Portainer deploy are still ahead. This plan does not downgrade firmware and does not factory-reset a second time. There is no dnsmasq service and no Query Forwarding file.
 
-**Working branch:** `feature/yandex-station-midi-self-host`
+**Guides checked 2026-11-19:** [Midi](https://hackalice.me/devices/station-midi/), [DNS unlock](https://hackalice.me/start/root/), [SSH and updates](https://hackalice.me/start/ssh/), [speaker DNS](https://hackalice.me/internals/network/).
+
+**Working branch:** `master`
 
 ---
 
 ## Do these in order
 
 1. **Task 1** — stage Supertonic 3, prompts, and `.env` on silverstone.
-2. **Task 2** — tagged Unbound zones are installed and the global Host Overrides are gone. Confirm OPNsense NTP on the IoT interface, record the Midi MAC, and reserve it on IoT DHCP with DNS `192.168.99.1`. LAN already reaches IoT. IoT does not reach LAN.
+2. **Task 2** — DNS and NTP are done. Record the Midi MAC and reserve it on IoT DHCP with DNS `192.168.99.1`.
 3. **Task 3** — start lite-kit on `192.168.99.10` with `run/no_downgrade`. The host cannot bind that address: TrueNAS owns `*:80` and `*:443`, and VLAN 99 is tagged on `ens1f0np0`.
-4. **Task 4** — button reset, then the in-app Wi-Fi join onto IoT, then ADB on silverstone. No `uid=0` means stop.
+4. **Task 4** — Midi reset (hold the center or rear microphone button, then apply power), join IoT from the app while the phone stays on LAN, then ADB on silverstone. No `uid=0` means stop. Do not downgrade.
 5. **Task 5** — lock in root and confirm a reboot.
 6. **Task 6** — remove the lite-kit container, then `docker compose up`.
 7. **Task 7** — dig `ntp.yantp.net`, then a normal reboot and a spoken question.
 8. **Task 8** — write down what was verified.
 
-Every `adb` command runs on silverstone (`ssh silverstone 'adb ...'`), so there is one ADB server. The repo checkout used by those commands is `/home/salekseev/src/github.com/salekseev/stacks` on silverstone.
+Every `adb` command runs on silverstone (`ssh silverstone 'adb ...'`), so there is one ADB server. silverstone has no checkout of this repo. Its home is `/mnt/spool/home/salekseev`. Task 5 copies `contrib/` there before `adb push`.
 
 ---
 
@@ -32,7 +34,7 @@ Every `adb` command runs on silverstone (`ssh silverstone 'adb ...'`), so there 
 - silverstone LAN address is `192.168.1.10`. The station must not be sent to the Tailscale address `100.77.121.38`.
 - Speakers live on OPNsense IoT: `opt1`, VLAN 99, `ix2_vlan99`, `192.168.99.0/24`, gateway `192.168.99.1`. IoT also has delegated IPv6. LAN is `192.168.1.0/24`. Speaker DNS is an `access-control-tag` for `192.168.99.0/24` and the current IoT IPv6 prefix. LAN clients are not tagged. `interface-tag` is not used: the generated ACL allows `0.0.0.0/0` and `::/0`, and those rules override every `interface-*` setting. LAN may reach IoT. IoT may not initiate connections to LAN.
 - Host paths: config `/mnt/spool/apps/config/yandex-station/`, data `/mnt/spool/apps/data/yandex-station/`. The `apps` account is uid/gid **568**.
-- Current firmware `0.373.1.16…20261104` is newer than the Midi build lite-kit's README records (`factory-9`). A factory reset wipes `/data` and cannot revert firmware.
+- Current firmware `0.373.1.16…20261104` is newer than the Midi build the guides verified (`0.369.1.46…20261013`). The self-hosted unlock page says builds after 20–21 October 2026 reject that server's certificate, so `get_sync_info` does not enable ADB. `0.373` is in that set and has not been verified on Midi. A factory reset wipes `/data`. This plan does not serve a downgrade. `uid=0` is the gate. The underscore marker paths (`/data/quasar_activate_*`) are for factory-6, not this retail build.
 - Placeholders: `<MIDI_MAC>` (capture before the reset), `<MIDI_IP>` (an address in `192.168.99.0/24`), `<OPENAI_API_KEY>` (the codex-lb `yandex` key), `<GIGAAM_DEVICE>` (`cpu` or `cuda`), `<TTS_VOICE>` (`M1`–`M5` or `F1`–`F5`; pinned supertonic README has no `F6`). Leave `OPENAI_BASE_URL` and `OPENAI_MODEL` unset; Compose uses `http://codex-lb:2455/v1` and `gpt-6-luna`. ADB and SSH run from silverstone, `192.168.1.10`.
 
 ---
@@ -97,7 +99,7 @@ curl -fsSL "$base/prompt-functions.handlebars" -o "$dest/prompt-functions.handle
 
 Expected: three non-empty files.
 
-- [x] **Step 4: `.env`** — present, mode `600`, owned by `salekseev`. Do not rewrite it. The live keys are `IOT_PARENT=ens1f0v2`, `SPEAKER_IP=192.168.99.10`, `POSTGRES_PASSWORD`, `OPENAI_API_KEY`, `TTS_VOICE=F1`, `GIGAAM_DEVICE=cpu`, and `GIGAAM_DOCKERFILE=Dockerfile.cpu`. `OPENAI_BASE_URL` and `OPENAI_MODEL` are unset. Compose reads this file only when `--env-file` is passed.
+- [x] **Step 4: `.env`** — present, mode `600`, owned by `salekseev`. Do not rewrite it. The live keys are `IOT_PARENT=ens1f0v2`, `SPEAKER_IP=192.168.99.10`, `POSTGRES_PASSWORD`, `OPENAI_API_KEY`, `TTS_VOICE=F1`, `GIGAAM_DEVICE=cpu`, and `GIGAAM_DOCKERFILE=Dockerfile.cpu`. `OPENAI_BASE_URL` and `OPENAI_MODEL` are unset. The stack mounts this file as the `yandex_env` secret. Portainer does not need stack environment variables.
 
 - [ ] **Step 5: ownership**
 
@@ -122,13 +124,7 @@ Do the remaining steps before the button reset. Speaker HTTPS and NTP stay on VL
 
 - [x] **Step 2: install `stacks/yandex-station/unbound-iot-acl.conf`** as `/usr/local/etc/unbound.opnsense.d/yandex-iot-acl.conf`. Done on lanner 2026-11-18. The file begins with `server:` and `define-tag: "yandex-iot"`. Unbound start copied it to `/var/unbound/etc/yandex-iot-acl.conf`. Global Host Overrides for these names were removed in the GUI before the reload. `unbound-checkconf` passed before `configctl unbound restart`. The file tags `192.168.99.0/24` and the current IoT prefix `2600:4040:5b42:2599::/64`. Update the prefix if the delegation changes. `192.168.99.0/24` does not renumber. Speaker DNS stays `192.168.99.1`.
 
-- [ ] **Step 3: NTP on the IoT interface.** Services → NTP listens on `opt1` (`ix2_vlan99`). From a host that can reach the IoT gateway:
-
-```bash
-ntpdate -q 192.168.99.1
-```
-
-Expected: a stratum 3 reply from `192.168.99.1`. If IoT rules allow the gateway only for DNS, add a pass for UDP `123` to `192.168.99.1`.
+- [x] **Step 3: NTP on the IoT interface.** Verified 2026-11-18 from lanner: `ntpdate -q 192.168.99.1` returned stratum 3, offset about 0, delay 0.026 s.
 
 - [x] **Step 4: firewall.** Accepted as-is for this deployment. LAN (`192.168.1.0/24`) may reach IoT (`192.168.99.0/24`). IoT may not initiate connections to LAN. silverstone (`192.168.1.10`) reaches the speaker on TCP `2222` and `5555` because it is on LAN. No extra pass or reject is added for those ports. No IoT-to-LAN pass for TCP `80`, `443`, `31116` or UDP `123`. No pass for port `53` to silverstone. No WAN forward of those ports.
 
@@ -187,9 +183,11 @@ Expected: the process is `scripts/equasar_server.py`. The speaker uses the tagge
 
 Task 2's tagged zones answer from an IoT source, and the lite-kit container is listening on `192.168.99.10:80` and `:443`. Resetting before both leaves the speaker on ordinary DNS or with nowhere to send the unlock query.
 
-**Reset (Midi / `cucumber`):** unplug power, hold the rear mute-microphone button, plug power back in, hold about 7–10 seconds until the LED is yellow-green, release, and wait for the setup prompt.
+**Reset (Midi / `cucumber`, hackalice 2026-11-19):** disconnect power. Hold the center touch button or the rear microphone button. Connect power while holding. Wait for the sound and the spoken reset message. Setup is offered after one or two minutes. This is not the Light sequence (power on first, then hold pause until yellow-green).
 
-- [ ] **Step 1: join the IoT Wi-Fi in the Yandex app while lite-kit is still up.** Add the device on VLAN 99. The unlock query happens during that join, not at the moment the LED changes.
+`0.373` is after the 20–21 October 2026 cutoff. The self-hosted server guide says those builds reject the certificate (`unknown_ca` on TLS) and never request `get_sync_info`. The Midi they verified is `0.369.1.46…20261013`. If this speaker does that, Task 5 does not start. This plan does not put a firmware zip in `firmware/` and does not clear `run/no_downgrade`.
+
+- [ ] **Step 1: join IoT from the Yandex app while lite-kit is still up.** Keep the phone on the LAN. Bluetooth and location stay on. In «Дом с Алисой», add an Alice device and stop on the Wi-Fi screen. Choose the IoT network there. The phone must not join the IoT SSID: that SSID is tagged, and the app has to reach real Yandex. The unlock query comes from the speaker after it joins, not when the LED changes.
 
 - [ ] **Step 2: ADB from silverstone**
 
@@ -203,7 +201,7 @@ adb shell getprop ro.product.cpu.abi'
 
 Expected: `<MIDI_IP>:5555 device` and `uid=0(root)`. Record the firmware as `<FIRMWARE_BUILD>` and the ABI. Confirm the ABI can run the static ARM EABI5 Dropbear before Task 5.
 
-**Gate:** `uid=0` continues to Task 5. Anything else stops the procedure. `firmware/` is empty and `run/no_downgrade` is set, so there is no `[OTA-AUTO]` manifest to wait for.
+**Gate:** `uid=0` continues to Task 5. Anything else stops the procedure. A closed port with no `get_sync_info` in `~/lite-kit/log/server.log` matches the post-October certificate rejection. `firmware/` is empty and `run/no_downgrade` is set, so there is no `[OTA-AUTO]` manifest to wait for. The wiki's unlock DNS is only `quasar.yandex.net`, `quasar.yandex.ru`, and `scbh.yandex.net`. This network also sends `login.yandex.ru` and the other speaker names to `192.168.99.10`. The phone does not see that, because it stays on the LAN. If the speaker joins Wi-Fi and never calls `get_sync_info`, those extra names are the next thing to inspect.
 
 ---
 
@@ -220,33 +218,41 @@ Do this while lite-kit is still listening on `:80/:443`, before Task 6. The tagg
 adb shell "touch /data/quasar/activate_adb_quasmodrom /data/quasar/activate_network_adb && chattr +i /data/quasar/activate_adb_quasmodrom /data/quasar/activate_network_adb"'
 ```
 
-- [ ] **Step 2: OTA disable**
+- [ ] **Step 2: copy `contrib/` to silverstone, then disable OTA**
 
-`yandex-noupdate.sh` with no argument runs `disable`.
+`yandex-noupdate.sh` with no argument runs `disable`. silverstone has no stacks checkout, so the push paths below are the copy made here.
 
 ```bash
-! ssh silverstone 'adb push /home/salekseev/src/github.com/salekseev/stacks/contrib/yandex-noupdate.sh /data/opt/yandex-noupdate.sh
+rsync -a contrib/ silverstone:~/yandex-unlock/
+ssh silverstone 'adb push ~/yandex-unlock/yandex-noupdate.sh /data/opt/yandex-noupdate.sh
 adb shell sh /data/opt/yandex-noupdate.sh
-adb shell sh /data/opt/yandex-noupdate.sh status'
+adb shell sh /data/opt/yandex-noupdate.sh status
+mkdir -p ~/yandex-unlock-backup
+adb pull /data/opt/backup ~/yandex-unlock-backup'
 ```
 
-Expected status includes `launch.json : updatesd убран`, `applier     : заглушён`, `ota key     : подменён`, and `maind --updatesd не запущен`.
+Expected status includes `launch.json : updatesd убран`, `applier     : заглушён`, `ota key     : подменён`, and `maind --updatesd не запущен`. On factory-6 the script leaves `updatesd` in place because that build has no `--platformd`. `0.373` is a later retail build and is expected to have `--platformd`. Pull `/data/opt/backup` off the speaker. A later factory reset deletes that directory. Do not commit the backup.
 
 - [ ] **Step 3: Dropbear**
 
+`rcS` runs `/etc/init.d/S??*` from the root filesystem. A copy that exists only under `/data/opt/etc/init.d/` does not start on the next boot. The script stays key-only (`-s -D /data/opt/etc/dropbear`). The guide's default line is `-B` (empty password). This plan does not use `-B`.
+
 ```bash
-! ssh silverstone 'adb push /home/salekseev/src/github.com/salekseev/stacks/contrib/bin/dropbear /data/opt/bin/dropbear
-adb push /home/salekseev/src/github.com/salekseev/stacks/contrib/bin/dropbearkey /data/opt/bin/dropbearkey
+ssh silverstone 'adb push ~/yandex-unlock/bin/dropbear /data/opt/bin/dropbear
+adb push ~/yandex-unlock/bin/dropbearkey /data/opt/bin/dropbearkey
 adb shell chmod +x /data/opt/bin/dropbear /data/opt/bin/dropbearkey
 adb shell /data/opt/bin/dropbearkey -t ed25519 -f /data/opt/etc/dropbear/hk_ed25519
-adb push /home/salekseev/src/github.com/salekseev/stacks/contrib/etc/dropbear/authorized_keys /data/opt/etc/dropbear/authorized_keys
-adb push /home/salekseev/src/github.com/salekseev/stacks/contrib/etc/init.d/S99zdropbear /data/opt/etc/init.d/S99zdropbear
+adb push ~/yandex-unlock/etc/dropbear/authorized_keys /data/opt/etc/dropbear/authorized_keys
 adb shell chmod 600 /data/opt/etc/dropbear/authorized_keys
-adb shell chmod +x /data/opt/etc/init.d/S99zdropbear
-adb shell /data/opt/etc/init.d/S99zdropbear'
+adb shell mount -o remount,rw /
+adb push ~/yandex-unlock/etc/init.d/S99zdropbear /etc/init.d/S99zdropbear
+adb shell chmod +x /etc/init.d/S99zdropbear
+adb shell sync
+adb shell mount -o remount,ro /
+adb shell /etc/init.d/S99zdropbear'
 ```
 
-Expected: the binary runs (Task 4 recorded an ABI that can execute AArch32), and something is listening on TCP `2222`.
+Expected: the binary runs (Task 4 recorded an ABI that can execute AArch32), `/etc/init.d/S99zdropbear` is the file that was pushed, and something is listening on TCP `2222`. Rootfs edits on `0.369` with verified boot were still unchecked on the Midi page. If `mount -o remount,rw /` fails, or the file is gone after the Task 5 reboot, stop. Do not switch the script to `-B` to get past that.
 
 - [ ] **Step 4: reboot and re-check**
 
@@ -269,21 +275,14 @@ Expected: `uid=0(root)` over both ADB and SSH. Dropbear is key-only (`-s`). The 
 
 ## Task 6: Stop lite-kit and start the stack
 
-- [ ] **Step 1: stop lite-kit**
-
-```bash
-! ssh silverstone 'sudo docker rm -f yandex-lite-kit
-sudo docker network rm yandex-iot'
-```
-
-Expected: the container and the `yandex-iot` network are gone, so `192.168.99.10` and `ens1f0v2` are free for the stack network. The tagged zones stay. IoT DNS stays `192.168.99.1`.
+- [x] **Step 1: stop lite-kit** — done 2026-11-20. `yandex-lite-kit` and the `yandex-iot` network were removed. `shared-services` was already present.
 
 - [ ] **Step 2: deploy**
 
-`up -d` pulls the five ghcr images after they have been published from `master`. Until that workflow has published the pinned tags, add `--build`.
+The ipvlan address `192.168.99.10` and parent `ens1f0v2` are in the compose file. `POSTGRES_PASSWORD` and `OPENAI_API_KEY` are read from `/mnt/spool/apps/config/yandex-station/v3rt3p/.env` when the containers start. A Portainer stack needs no environment variables. `up -d` pulls the five ghcr images after they have been published from `master`. Until that workflow has published the pinned tags, add `--build`.
 
 ```bash
-! ssh silverstone 'docker compose -f /home/salekseev/src/github.com/salekseev/stacks/stacks/yandex-station.yaml --env-file /mnt/spool/apps/config/yandex-station/v3rt3p/.env up -d
+! ssh silverstone 'docker compose -f /home/salekseev/src/github.com/salekseev/stacks/stacks/yandex-station.yaml up -d
 docker compose -f /home/salekseev/src/github.com/salekseev/stacks/stacks/yandex-station.yaml ps'
 ```
 
@@ -332,6 +331,8 @@ docker logs v3rt3p-quasar-server | tail -20'
 
 Expected: `uid=0(root)` still. quasar-server shows the station connecting. A button factory reset here would wipe `/data` and drop root. If the local backend cannot be reached without that wipe, stop and repeat Tasks 3–5 on purpose with lite-kit listening on `:80/:443` again. Leave the tagged zones in place.
 
+On Mini 2 `0.369`, `get_sync_info` can install DNS forwarders `77.88.8.x`. The speaker then resolves `quasar.yandex.net` on the public internet and never asks OPNsense. A speaker with an empty `/data` uses the DHCP DNS for the first query, which is the tagged Unbound. If quasar-server shows no connection after this reboot, check whether the speaker is querying `77.88.8.x` on port 53. The fix is to keep IoT DNS to `192.168.99.1` only. Do not open that path to the LAN.
+
 ---
 
 ## Task 8: Record the result
@@ -345,5 +346,5 @@ Expected: `uid=0(root)` still. quasar-server shows the station connecting. A but
 ## Rollback
 
 - **OPNsense:** delete `/usr/local/etc/unbound.opnsense.d/yandex-iot-acl.conf` and `/var/unbound/etc/yandex-iot-acl.conf`, then restart Unbound. Leave the LAN-to-IoT policy as it was. IoT DHCP DNS was already `192.168.99.1`.
-- **silverstone:** `docker rm -f yandex-lite-kit` and `docker network rm yandex-iot` if they remain, then `docker compose -f /home/salekseev/src/github.com/salekseev/stacks/stacks/yandex-station.yaml --env-file /mnt/spool/apps/config/yandex-station/v3rt3p/.env down`.
+- **silverstone:** `docker rm -f yandex-lite-kit` and `docker network rm yandex-iot` if they remain, then `docker compose -f /home/salekseev/src/github.com/salekseev/stacks/stacks/yandex-station.yaml down`.
 - **Midi:** a factory reset wipes `/data` and cannot revert firmware.
