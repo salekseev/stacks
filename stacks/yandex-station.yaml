@@ -49,7 +49,7 @@ services:
   # Main "maind" protocol server (Quasar backend emulator).
   # Shares https-proxy's namespace: 31115 and 31116 are on SPEAKER_IP.
   quasar-server:
-    image: ghcr.io/salekseev/v3rt3p-quasar-server:0a359df
+    image: ghcr.io/salekseev/v3rt3p-quasar-server:4e778cb
     build:
       context: ./yandex-station/quasar-server
     container_name: v3rt3p-quasar-server
