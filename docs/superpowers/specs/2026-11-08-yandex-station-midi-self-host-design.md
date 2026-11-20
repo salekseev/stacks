@@ -24,7 +24,7 @@ The owner asked for a comparison; **the v3rt3p Compose stack was selected** as t
 
 | Backend | What it is | Why v3rt3p was chosen | Residual cost |
 |---|---|---|---|
-| **v3rt3p stack** (selected) | Compose: `https-proxy` (eMudhra CA) + `quasar-server` + `processor` (LLM) + `quasistreaming-gigam` (ASR) + `supertonic-tts` (TTS) + `postgres`. `ntp.yantp.net` is a tagged local zone for the IoT subnet, answering OPNsense `192.168.99.1` | Multi-container; supplied container builds and **no mandatory GPU**; its stock `https-proxy` uses the **compromised eMudhra CA, which the station trusts out of the box** — this removes the firmware-dependent self-generated-CA step | More services/state to maintain; needs the Supertonic 3 tree from Hugging Face, prompts, Postgres, and the tagged Unbound file; the stock compromised-CA proxy is a deliberate security tradeoff (see §5.5/§11) |
+| **v3rt3p stack** (selected) | Compose: `https-proxy` (eMudhra CA) + `quasar-server` + `processor` (LLM) + `quasistreaming-gigam` (ASR) + `supertonic-tts` (TTS). Station state is SQLite at `/database/database.sqlite3`. `ntp.yantp.net` is a tagged local zone for the IoT subnet, answering OPNsense `192.168.99.1` | Multi-container; supplied container builds and **no mandatory GPU**; its stock `https-proxy` uses the **compromised eMudhra CA, which the station trusts out of the box** — this removes the firmware-dependent self-generated-CA step | More services/state to maintain; needs the Supertonic 3 tree from Hugging Face, prompts, the SQLite file, and the tagged Unbound file; the stock compromised-CA proxy is a deliberate security tradeoff (see §5.5/§11) |
 | quasard source build (superseded) | Single Python app on silverstone (`uv`+`torch`), Yandex Music + cloud Edge TTS; a self-generated CA in the station's trust store | Smaller runtime but a self-generated CA needs a **firmware-dependent root exploit** the Nov-4 build may not accept | Baseline draft only; kept in §3/§11 for traceability |
 | Host Python + systemd | Fewer containers, but a second deployment lifecycle outside this repo's stack convention | Not recommended | — |
 
@@ -53,7 +53,7 @@ The Midi's own compute is irrelevant to the backend: the v3rt3p stack runs on si
 
 The customization is documented by independent community sources, cross-referenced:
 
-- **`v3rt3p/v3rt3p.github.io`** + sibling repos — the **selected** self-hosted voice-assistant stack. `docker-compose.yml` wires six container builds: `https-proxy` (from `v3rt3p/https-proxy`), `quasar-server` (`v3rt3p/quasar-server`), `quasistreaming-gigam` (`v3rt3p/quasistreaming-gigam`), `supertonic-tts` (`v3rt3p/supertonic-tts`), `processor` (`v3rt3p/processor`), and the base image `postgres:17`, plus the public `cturra/ntp` upstream. This repo's stack pins stock `postgres:18` and does not run `cturra/ntp` on an empty data directory. GPL-3.0. The docs (`en/`) describe a CPU-first "getting-started" compose and a GPU path.
+- **`v3rt3p/v3rt3p.github.io`** + sibling repos — the **selected** self-hosted voice-assistant stack. Upstream `docker-compose.yml` wires `postgres:17`. This repo uses SQLite (`SQLITE_PATH=/database/database.sqlite3`, the path in the quasar-server docs) and does not run `cturra/ntp`. GPL-3.0. The docs (`en/`) describe a CPU-first "getting-started" compose and a GPU path.
 - **`v3rt3p/https-proxy`** — NGINX on `:80`/`:443` with the **eMudhra intermediate CA** (`certs/ca.crt` paired with `certs/ca.key`, scalar 56). It generates per-domain **P-384 EC** certs at runtime from `domains/yandex.txt`. `YANDEX_UPSTREAM_URL` replaces the first-line upstream. Names without a `!` are forwarded to quasar-server. A `!` name is still terminated locally and then proxied to the real origin. TLS key-logging is disabled by default.
 - **`Marker284/yandex-station-extended`** (`hackalice.me`) — the wiki. Documents the **DNS-unlock** method, the **SSH/OTA-disable** follow-up, device dossiers, and self-hosted **recipe** pages (`recipes/quasard`, `recipes/v3rt3p`). CC-BY-4.0.
 - **`krevetkqqq/lite-kit`** (MIT) — the "own update server" stand that yields root ADB (unchanged from the earlier design; see §5.3).
@@ -102,7 +102,7 @@ Yandex Station Midi (and later speakers) on IoT 192.168.99.0/24
         https-proxy holds 192.168.99.10 TCP 80/443 (eMudhra CA)
           → quasar-server in that namespace (:31115, control API :31116)
           → processor via codex-lb on shared-services
-          → quasistreaming-gigam (ASR) · supertonic-tts · postgres
+          → quasistreaming-gigam (ASR) · supertonic-tts · SQLite file
           NTP: ntp.yantp.net → OPNsense 192.168.99.1 (not a container)
 ```
 
@@ -117,14 +117,14 @@ Yandex Station Midi (and later speakers) on IoT 192.168.99.0/24
 New stack at `stacks/yandex-station.yaml`, following `stacks/hindsight.yaml` / `stacks/media.yaml` shape (multi-service, persistent DB, secrets out of YAML):
 
 - `# $schema:` header (compose-spec) as the repository requires.
-- **Build sources vendored locally.** Five images are built from git. Vendor them as git submodules under `stacks/yandex-station/` and pin `image:` to each submodule's short SHA. `postgres` pulls from the registry. NTP is OPNsense, not an image.
+- **Build sources vendored locally.** Five images are built from git. Vendor them as git submodules under `stacks/yandex-station/` and pin `image:` to each submodule's short SHA. NTP is OPNsense, not an image. Station state is SQLite.
 - Config/data on the standard layout:
   - The Compose file stays at `stacks/yandex-station.yaml`. It is not copied into the config directory.
   - `domains/yandex.txt` stays inside the `https-proxy` image. Speaker DNS is `stacks/yandex-station/unbound-iot-acl.conf`. The file begins with `server:` and `define-tag: "yandex-iot"`, then `access-control-tag` for `192.168.99.0/24` and the current IoT IPv6 prefix. HTTPS names are `192.168.99.10`. `ntp.yantp.net` is `192.168.99.1`. It is installed as `/usr/local/etc/unbound.opnsense.d/yandex-iot-acl.conf`. Do not add those names as global Host Overrides. Do not use `interface-tag` or `interface-view`.
   - `/mnt/spool/apps/config/yandex-station/v3rt3p/.env` — `POSTGRES_PASSWORD` and `OPENAI_API_KEY` (the codex-lb `yandex` key). Owned by the deploying user, mode `600`. Leave `OPENAI_BASE_URL` and `OPENAI_MODEL` unset so Compose uses `http://codex-lb:2455/v1` and `gpt-6-luna`.
   - `/mnt/spool/apps/config/yandex-station/v3rt3p/prompts/` — the three processor handlebars files from the pinned processor commit.
   - `/mnt/spool/apps/config/yandex-station/v3rt3p/supertonic-tts-assets/` — **read-only** Supertonic 3 tree (`onnx/` and `voice_styles/` at the mount root), from Hugging Face revision `aafc6e32416a594460b32413efc49d7fe4ce6d46`.
-  - `/mnt/spool/apps/data/yandex-station/v3rt3p/postgres-data/` and `gigaam-cache/`. GigaAM downloads `v3_e2e_rnnt` into the cache on first start. Do not pre-copy legacy ONNX or token files.
+  - `/mnt/spool/apps/data/yandex-station/v3rt3p/quasar-server-db/` (`database.sqlite3`) and `gigaam-cache/`. GigaAM downloads `v3_e2e_rnnt` into the cache on first start. Do not pre-copy legacy ONNX or token files.
 - Secrets **out of YAML** — `POSTGRES_PASSWORD` and `OPENAI_API_KEY` come from `--env-file`. Compose does not auto-read the config-dir `.env`.
 - Run unprivileged where the image allows. The pinned GigaAM and Supertonic Dockerfiles have no `USER`, so those processes run as root in the container and can write the cache mounts.
 
@@ -149,7 +149,7 @@ Six cooperating services from the v3rt3p docs. NTP is OPNsense, not a container:
 - **`processor`** — prompts and codex-lb (`http://codex-lb:2455/v1` on the external `shared-services` network, bearer key `yandex`, model `gpt-6-luna`, reasoning effort `low`).
 - **`quasistreaming-gigam`** — ASR via Sber GigaAM `v3_e2e_rnnt`, CPU by default. The checkpoint downloads into the mounted cache on first start and needs outbound HTTPS that once.
 - **`supertonic-tts`** — local OpenAI-compatible TTS. Voices at the pinned README are `M1`–`M5` and `F1`–`F5`. Assets are the Hugging Face Supertonic 3 tree mounted read-only at `/assets`.
-- **`postgres`** — speaker and state DB.
+- **SQLite** — speaker and state DB, file `/database/database.sqlite3` inside quasar-server.
 - **DNS** — `stacks/yandex-station/unbound-iot-acl.conf`. Tagged local zones for sources in `192.168.99.0/24`. There is no dnsmasq service.
 - **NTP** — OPNsense on the IoT gateway `192.168.99.1` (UDP 123, stratum 3). The tagged local zone for `ntp.yantp.net` names that address. The stack does not run `ntp-server`.
 

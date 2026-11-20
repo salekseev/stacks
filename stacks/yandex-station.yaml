@@ -10,14 +10,15 @@
 # ipvlan L2 parent is an SR-IOV virtual function on the LAN NIC (IOT_PARENT).
 # That function is an access port for VLAN 99, so container frames leave tagged.
 # The container addresses are not host ports, so the TrueNAS UI can keep *:80 and *:443.
-# postgres, processor, quasistreaming-gigam, and supertonic-tts stay on the
+# processor, quasistreaming-gigam, and supertonic-tts stay on the
 # stack network. https-proxy is on both, and quasar-server uses that namespace,
 # so those service names still resolve.
 #
 # The ipvlan address and parent are fixed in this file (192.168.99.10, ens1f0v2).
-# POSTGRES_PASSWORD and OPENAI_API_KEY are read at container start from
-# /mnt/spool/apps/config/yandex-station/v3rt3p/.env, mounted by the daemon as
-# the yandex_env secret. Portainer does not interpolate that file.
+# Station state is a SQLite file on the host. OPENAI_API_KEY is read at
+# processor start from /mnt/spool/apps/config/yandex-station/v3rt3p/.env,
+# mounted by the daemon as the yandex_env secret. Portainer does not
+# interpolate that file. POSTGRES_PASSWORD in the file is unused.
 # This file has no build: keys. Portainer Git deploy builds whenever build:
 # is present, and that build runs inside the Portainer container, which
 # cannot mkdir /docker. Images are pulled from ghcr. An air-gap rebuild is
@@ -25,7 +26,6 @@
 #   docker compose -f stacks/yandex-station.yaml -f stacks/yandex-station.build.yaml build
 #
 # Build contexts are five vendored git submodules under stacks/yandex-station/.
-# postgres is a registry image.
 # Design: docs/superpowers/specs/2026-11-08-yandex-station-midi-self-host-design.md
 # Plan:   docs/superpowers/plans/2026-11-08-yandex-station-midi-self-host.md
 
@@ -51,19 +51,9 @@ services:
     container_name: v3rt3p-quasar-server
     restart: unless-stopped
     network_mode: service:https-proxy
-    # POSTGRES_URL is built after the env file is sourced. Compose would
-    # otherwise bake an empty password in at parse time.
-    entrypoint:
-      - sh
-      - -c
-      - |
-        set -a
-        . /run/secrets/yandex_env
-        set +a
-        export POSTGRES_URL="postgres://quasar:$${POSTGRES_PASSWORD}@postgres:5432/quasar"
-        exec pnpm start
-    secrets:
-      - yandex_env
+    # Same path as the upstream example: SQLITE_PATH /database/database.sqlite3.
+    # https://v3rt3p.github.io/ru/services/quasar-server.html
+    # POSTGRES_URL must stay unset; quasar-server prefers postgres when both are set.
     environment:
       ALLOW_UPDATES: "true"
       PORT: "31115"
@@ -72,35 +62,14 @@ services:
       TTS_OPENAI_VOICE: "${TTS_VOICE:-F1}"          # supertonic voices: M1–M5, F1–F5
       PROCESSOR_BASIC_URL: http://processor:8080    # base URL; processor appends its route
       STT_GIGAAM_URL: ws://quasistreaming-gigam:8080
+      SQLITE_PATH: /database/database.sqlite3
+    volumes:
+      - /mnt/spool/apps/data/yandex-station/v3rt3p/quasar-server-db:/database
     depends_on:
       - https-proxy
-      - postgres
       - processor
       - quasistreaming-gigam
       - supertonic-tts
-
-  # Stock Postgres 18, same major as hindsight. Not the vchord image.
-  # Official 18 mounts the data volume at /var/lib/postgresql. The directory
-  # must be empty on first start. A postgres:17 data directory cannot be mounted here.
-  postgres:
-    image: postgres:18
-    container_name: v3rt3p-postgres
-    restart: unless-stopped
-    entrypoint:
-      - sh
-      - -c
-      - |
-        set -a
-        . /run/secrets/yandex_env
-        set +a
-        exec docker-entrypoint.sh postgres
-    secrets:
-      - yandex_env
-    environment:
-      POSTGRES_USER: quasar
-      POSTGRES_DB: quasar
-    volumes:
-      - /mnt/spool/apps/data/yandex-station/v3rt3p/postgres-data:/var/lib/postgresql
 
   # ASR: GigaAM. Models self-download into the persistent cache below (do NOT
   # pre-copy legacy ONNX files — upstream README). Default CPU; GIGAAM_DEVICE=cuda
@@ -170,7 +139,7 @@ services:
 
 secrets:
   # Daemon bind-mounts this host file at /run/secrets/yandex_env.
-  # Portainer does not open it. The file stays mode 600 on the host.
+  # Only the processor reads it, for OPENAI_API_KEY. Portainer does not open it.
   yandex_env:
     file: /mnt/spool/apps/config/yandex-station/v3rt3p/.env
 
