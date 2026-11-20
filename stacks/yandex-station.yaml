@@ -60,7 +60,7 @@ services:
       API_PORT: "31116"
       TTS_OPENAI_BASE_URL: http://supertonic-tts:9150
       TTS_OPENAI_VOICE: "${TTS_VOICE:-F1}"          # supertonic voices: M1–M5, F1–F5
-      PROCESSOR_BASIC_URL: http://processor:8080    # base URL; processor appends its route
+      PROCESSOR_BASIC_URL: http://processor:8080/process
       STT_GIGAAM_URL: ws://quasistreaming-gigam:8080
       SQLITE_PATH: /database/database.sqlite3
     volumes:
@@ -121,6 +121,9 @@ services:
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-http://codex-lb:2455/v1}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-6-luna}
       OPENAI_REASONING_EFFORT: ${OPENAI_REASONING_EFFORT:-low}
+      # codex-lb rejects role "tool" unless it follows a tool_call. These
+      # messages are prompt context, so they go out as system messages.
+      STATE_FUNCTIONS_MESSAGES_TYPE: system
       # Upstream Sentry.init always runs (tracesSampleRate 1) and its default
       # DSN is a sentry.io placeholder. This address is closed.
       SENTRY_DSN: https://disabled@127.0.0.1:9/1
