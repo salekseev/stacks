@@ -14,10 +14,10 @@
 # stack network. https-proxy is on both, and quasar-server uses that namespace,
 # so those service names still resolve.
 #
-# Required in the env file: IOT_PARENT, SPEAKER_IP.
-#   docker compose -f stacks/yandex-station.yaml --env-file \
-#     /mnt/spool/apps/config/yandex-station/v3rt3p/.env up -d
-# (compose does NOT auto-read the config-dir .env; the flag is required).
+# The ipvlan address and parent are fixed in this file (192.168.99.10, ens1f0v2).
+# POSTGRES_PASSWORD and OPENAI_API_KEY are read at container start from
+# /mnt/spool/apps/config/yandex-station/v3rt3p/.env, mounted by the daemon as
+# the yandex_env secret. Portainer does not interpolate that file.
 # `up -d` pulls the five ghcr images. Append `--build` only for an air-gap
 # rebuild from the vendored submodules.
 #
@@ -44,7 +44,7 @@ services:
     networks:
       default: {}
       iot:
-        ipv4_address: ${SPEAKER_IP:?set SPEAKER_IP}
+        ipv4_address: 192.168.99.10
 
   # Main "maind" protocol server (Quasar backend emulator).
   # Shares https-proxy's namespace: 31115 and 31116 are on SPEAKER_IP.
@@ -55,6 +55,19 @@ services:
     container_name: v3rt3p-quasar-server
     restart: unless-stopped
     network_mode: service:https-proxy
+    # POSTGRES_URL is built after the env file is sourced. Compose would
+    # otherwise bake an empty password in at parse time.
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -a
+        . /run/secrets/yandex_env
+        set +a
+        export POSTGRES_URL="postgres://quasar:$${POSTGRES_PASSWORD}@postgres:5432/quasar"
+        exec pnpm start
+    secrets:
+      - yandex_env
     environment:
       ALLOW_UPDATES: "true"
       PORT: "31115"
@@ -63,7 +76,6 @@ services:
       TTS_OPENAI_VOICE: "${TTS_VOICE:-F1}"          # supertonic voices: M1–M5, F1–F5
       PROCESSOR_BASIC_URL: http://processor:8080    # base URL; processor appends its route
       STT_GIGAAM_URL: ws://quasistreaming-gigam:8080
-      POSTGRES_URL: postgres://quasar:${POSTGRES_PASSWORD:-change-me}@postgres:5432/quasar
     depends_on:
       - https-proxy
       - postgres
@@ -78,9 +90,18 @@ services:
     image: postgres:18
     container_name: v3rt3p-postgres
     restart: unless-stopped
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -a
+        . /run/secrets/yandex_env
+        set +a
+        exec docker-entrypoint.sh postgres
+    secrets:
+      - yandex_env
     environment:
       POSTGRES_USER: quasar
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
       POSTGRES_DB: quasar
     volumes:
       - /mnt/spool/apps/data/yandex-station/v3rt3p/postgres-data:/var/lib/postgresql
@@ -127,9 +148,19 @@ services:
     networks:
       - default
       - shared-services
+    # OPENAI_API_KEY comes from the env file at start, not from stack env.
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -a
+        . /run/secrets/yandex_env
+        set +a
+        exec pnpm start
+    secrets:
+      - yandex_env
     environment:
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-http://codex-lb:2455/v1}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:?set OPENAI_API_KEY (codex-lb yandex key)}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-6-luna}
       OPENAI_REASONING_EFFORT: ${OPENAI_REASONING_EFFORT:-low}
       # Upstream Sentry.init always runs (tracesSampleRate 1) and its default
@@ -148,6 +179,12 @@ services:
   # these builds); add per service once a readiness signal is evidenced — the
   # real trust check is TLS to https://quasar.yandex.net on :443.
 
+secrets:
+  # Daemon bind-mounts this host file at /run/secrets/yandex_env.
+  # Portainer does not open it. The file stays mode 600 on the host.
+  yandex_env:
+    file: /mnt/spool/apps/config/yandex-station/v3rt3p/.env
+
 networks:
   # Created out-of-band: `docker network create shared-services`.
   # The processor reaches codex-lb (stacks/codex-lb.yaml) by name here.
@@ -156,7 +193,7 @@ networks:
   iot:
     driver: ipvlan
     driver_opts:
-      parent: ${IOT_PARENT:?set IOT_PARENT to the VLAN 99 SR-IOV function}
+      parent: ens1f0v2
       ipvlan_mode: l2
     ipam:
       config:
