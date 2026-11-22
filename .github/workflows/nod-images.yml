@@ -1,0 +1,90 @@
+# Builds the nod images from the vendored n8n-io/nod submodule and publishes
+# them as ghcr.io packages. Upstream publishes no images, and Portainer Git
+# deploy cannot build.
+#
+# Tag contract: each image is tagged with the SHORT SHA (7) of the
+# stacks/nod/upstream submodule pin — derived, never hand-written.
+# stacks/nod.yaml pins image: to the same SHA; bump the submodule and the image
+# tags together in one commit. PRs build for verification (no push); master pushes.
+#
+# Design: docs/superpowers/specs/2026-11-21-nod-stack-design.md
+# Plan:   docs/superpowers/plans/2026-11-21-nod-stack.md
+name: nod images
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - stacks/nod/**
+      - stacks/nod.yaml
+      - .github/workflows/nod-images.yml
+  pull_request:
+    paths:
+      - stacks/nod/**
+      - stacks/nod.yaml
+      - .github/workflows/nod-images.yml
+  workflow_dispatch:
+
+concurrency:
+  group: nod-images-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: server
+            context: stacks/nod/upstream
+            dockerfile: stacks/nod/upstream/deployment/self-host/Dockerfile
+          - image: browser
+            context: stacks/nod/upstream
+            dockerfile: stacks/nod/upstream/Dockerfile.browser
+          - image: workspace
+            context: stacks/nod/upstream
+            dockerfile: stacks/nod/upstream/Dockerfile.workspace
+          # Ours: bakes upstream's docker-proxy.mjs into the node base image.
+          # Narrower context because upstream's root .dockerignore excludes
+          # docker-proxy.mjs.
+          - image: runtime
+            context: stacks/nod/upstream/deployment/self-host
+            dockerfile: stacks/nod/runtime.Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Image coordinates (tag = submodule short SHA)
+        id: meta
+        run: |
+          short=$(git -C stacks/nod/upstream rev-parse --short=7 HEAD)
+          echo "tag=${short}" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/${{ github.repository_owner }}/nod-${{ matrix.image }}" >> "$GITHUB_OUTPUT"
+
+      - name: Login to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+            ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}
+            ${{ steps.meta.outputs.image }}:latest
+          cache-from: type=gha,scope=nod-${{ matrix.image }}
+          cache-to: type=gha,scope=nod-${{ matrix.image }},mode=max
