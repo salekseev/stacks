@@ -22,6 +22,12 @@
       "enabled": false
     },
     {
+      "description": "nod images are pinned to the stacks/nod/upstream submodule SHA and rebuilt by CI; bumps come from submodule updates (same commit), not docker tag lookups",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["ghcr.io/salekseev/nod-{/,}**"],
+      "enabled": false
+    },
+    {
       "description": "Pin digests for rolling tags to track underlying image changes",
       "matchDatasources": [
         "docker"

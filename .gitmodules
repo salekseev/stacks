@@ -13,3 +13,6 @@
 [submodule "stacks/yandex-station/processor"]
 	path = stacks/yandex-station/processor
 	url = https://github.com/v3rt3p/processor.git
+[submodule "stacks/nod/upstream"]
+	path = stacks/nod/upstream
+	url = https://github.com/n8n-io/nod.git

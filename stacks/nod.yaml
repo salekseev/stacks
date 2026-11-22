@@ -1,0 +1,333 @@
+# $schema: https://raw.githubusercontent.com/compose-spec/compose-spec/refs/heads/main/schema/compose-spec.json
+#
+# Nod — n8n's single-user AI assistant with its own Linux workspace and browser.
+# See docs/superpowers/specs/2026-11-21-nod-stack-design.md
+#
+# Port of upstream deployment/self-host/compose.yaml (n8n-io/nod). Hardening
+# flags (read_only, cap_drop, pids/mem limits, tmpfs) are upstream's — keep them.
+# Differences from upstream:
+#   - images pulled from ghcr.io/salekseev/nod-* (built by
+#     .github/workflows/nod-images.yml from the stacks/nod/upstream submodule;
+#     tag = submodule short SHA — bump both in one commit)
+#   - docker-proxy.mjs baked into nod-runtime instead of bind-mounted
+#   - secrets from host files via Docker secrets instead of env_file
+#   - Postgres 18 as 568:568; state in ZFS datasets
+#   - no host ports; reached through a Cloudflare tunnel
+#
+# LLM: the server calls codex-lb (stacks/codex-lb.yaml) over shared-services as
+# an OpenAI-compatible (Chat Completions) provider with its own codex-lb key.
+#
+# Host state — back up data/nod and config/nod TOGETHER; the DB is useless
+# without NOD_VAULT_KEY:
+#   /mnt/spool/apps/data/nod/server           1000:1000  -> /var/lib/nod
+#   /mnt/spool/apps/data/nod/workspaces       1000:1000  -> workspaces
+#   /mnt/spool/apps/data/nod/workspace-tools  1000:1000  -> workspace /home/node
+#   /mnt/spool/apps/data/nod/browser          1000:1000 0700 -> browser /data
+#   /mnt/spool/apps/data/nod/postgres         568:568    -> Postgres
+#   /mnt/spool/apps/config/nod/env            1000:1000 0600  (server secrets)
+#   /mnt/spool/apps/config/nod/db_password    1000:568  0640  (same DB password)
+#   /mnt/spool/apps/config/nod/cloudflared/   1000:568  2750  (setgid: files get gid 568)
+#   /mnt/spool/apps/config/nod/cloudflared/tunnel.json  0640, group 568
+# The two dataset roots are 1000:568 0770. uid 1000 is the host admin account,
+# so config is editable without sudo; uid 568 containers (postgres,
+# cloudflared) read through the group.
+# Nod's own containers run as `node` (uid 1000), not 568; the workspace also
+# runs commands as uids 20000-59999 gid 1002.
+#
+# SECURITY: nod.alekseev.us is public and gated only by NOD_AUTH_TOKEN, which
+# grants full control of the assistant and every connected account. There is
+# no Cloudflare Access in front (the desktop app could not pass it). Restrict
+# source IPs with a Cloudflare WAF rule.
+
+services:
+
+  server:
+    image: ghcr.io/salekseev/nod-server:1b42e68
+    container_name: nod-server
+    hostname: nod-server
+    init: true
+    # env_file: is resolved at compose-parse time, which fails inside Portainer.
+    # A Docker secret defers the path to the daemon (same as hindsight).
+    # environment: is applied first, then the secret file is sourced.
+    # NOD_POSTGRES_PASSWORD is hex, so it needs no URL escaping.
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -a; . /run/secrets/nod_env; set +a
+        export DATABASE_URL="postgresql://nod:$${NOD_POSTGRES_PASSWORD}@postgres:5432/nod"
+        exec node --import tsx src/server/index.ts
+    secrets:
+      - nod_env
+    environment:
+      NODE_ENV: production
+      NOD_ENVIRONMENT: production
+      NOD_HOST: 0.0.0.0
+      PORT: "4310"
+      NOD_DATA_ROOT: /var/lib/nod
+      # Must equal the tunnel hostname exactly: nod checks the Host header
+      # itself and ignores forwarded headers.
+      NOD_PUBLIC_URL: https://nod.alekseev.us
+      DOCKER_HOST: tcp://runtime:2375
+      WORKSPACE_CONTAINER: nod-workspace-nod
+      BROWSER_CONTAINER: nod-browser-nod
+      # codex-lb, by name over shared-services. The key (OPENAI_COMPATIBLE_API_KEY)
+      # is this stack's own codex-lb key and lives in the nod_env secret.
+      # nod shows "No price" for compatible servers and does not count their
+      # usage, so the token limit on the codex-lb key is the only spend guard.
+      LLM_PROVIDER: compatible
+      OPENAI_COMPATIBLE_BASE_URL: http://codex-lb:2455/v1
+      LLM_MODEL: gpt-6.2-sol
+      # No phone-home.
+      NOD_ANALYTICS_ENABLED: "false"
+      NOD_FEEDBACK_ENABLED: "false"
+      NOD_ONBOARDING_EMAIL_URL: ""
+    expose:
+      - "4310"
+    volumes:
+      - server-data:/var/lib/nod
+      - workspace-data:/var/lib/nod/workspaces
+    tmpfs:
+      - /tmp:uid=1000,gid=1000,mode=1777,size=256m
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 512
+    mem_limit: 2g
+    networks:
+      - backend
+      - control
+      - outbound
+      - shared-services
+      - nod-edge
+    depends_on:
+      postgres:
+        condition: service_healthy
+      runtime:
+        condition: service_started
+      browser:
+        condition: service_healthy
+      workspace:
+        condition: service_started
+    # healthcheck.mjs authenticates with NOD_AUTH_TOKEN. Healthchecks get the
+    # container's configured environment, not what the entrypoint sourced, so
+    # the secret file is sourced here too.
+    healthcheck:
+      test: ['CMD', 'sh', '-c', 'set -a; . /run/secrets/nod_env; set +a; exec node /app/healthcheck.mjs']
+      interval: 15s
+      timeout: 6s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+
+  postgres:
+    # Upstream ships 17; 18 matches the other stacks here.
+    image: postgres:18-alpine@sha256:0115267ab5a509022df9319c77be365cef335adb71556c75f60f5360ee247e71
+    container_name: nod-postgres
+    user: "568:568"
+    environment:
+      POSTGRES_USER: nod
+      POSTGRES_DB: nod
+      POSTGRES_PASSWORD_FILE: /run/secrets/nod_db_password
+      PGDATA: /var/lib/postgresql/data/pgdata
+    secrets:
+      - nod_db_password
+    volumes:
+      - /mnt/spool/apps/data/nod/postgres:/var/lib/postgresql/data
+    networks:
+      - backend
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U nod -d nod']
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  # Holds the host Docker socket. docker-proxy.mjs refuses everything except
+  # exec + inspect on the two containers named below (no privileged, TTY,
+  # detached or env-carrying execs). Reachable only on the internal control net.
+  runtime:
+    image: ghcr.io/salekseev/nod-runtime:1b42e68
+    container_name: nod-runtime
+    init: true
+    environment:
+      WORKSPACE_CONTAINER: nod-workspace-nod
+      BROWSER_CONTAINER: nod-browser-nod
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - control
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    mem_limit: 128m
+    restart: unless-stopped
+
+  browser:
+    image: ghcr.io/salekseev/nod-browser:1b42e68
+    # The name is part of the runtime allowlist (must match BROWSER_CONTAINER).
+    container_name: nod-browser-nod
+    hostname: nod-browser
+    init: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    read_only: true
+    pids_limit: 1024
+    mem_limit: 3g
+    shm_size: 512m
+    volumes:
+      - browser-data:/data
+    tmpfs:
+      - /tmp:size=512m
+      - /home/node:uid=1000,gid=1000,mode=700,size=256m
+    networks:
+      - browser
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          'const s=require("node:net").connect("/data/control.sock");s.on("connect",()=>{s.end();process.exit(0)});s.on("error",()=>process.exit(1))',
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  workspace:
+    image: ghcr.io/salekseev/nod-workspace:1b42e68
+    # The name is part of the runtime allowlist (must match WORKSPACE_CONTAINER).
+    container_name: nod-workspace-nod
+    init: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 512
+    mem_limit: 2g
+    volumes:
+      - workspace-data:/workspace
+      - workspace-tools:/home/node
+    # All workspace traffic leaves through the firewall sidecar's namespace.
+    network_mode: service:workspace-network
+    depends_on:
+      workspace-network:
+        condition: service_healthy
+        restart: true
+    command: ['sleep', 'infinity']
+    restart: unless-stopped
+
+  # Firewall for the workspace: blocks private/reserved IPv4 (so the agent's
+  # shell cannot reach the LAN, codex-lb or cloud metadata) and external IPv6.
+  workspace-network:
+    image: ghcr.io/salekseev/nod-workspace:1b42e68
+    container_name: nod-workspace-network
+    dns: [1.1.1.1, 8.8.8.8]
+    user: root
+    init: true
+    entrypoint: /usr/local/bin/nod-workspace-network
+    cap_drop: [ALL]
+    cap_add: [NET_ADMIN]
+    security_opt: [no-new-privileges:true]
+    read_only: true
+    tmpfs:
+      - /tmp:size=1m
+    pids_limit: 32
+    mem_limit: 64m
+    networks:
+      - workspace
+    healthcheck:
+      test: ['CMD', 'test', '-f', '/tmp/network-ready']
+      interval: 2s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:2026.11.1
+    container_name: nod-cloudflared
+    hostname: nod-cloudflared
+    command: --config /etc/cloudflared/config.yml tunnel run
+    user: "568:568"
+    configs:
+      - source: cloudflared
+        target: /etc/cloudflared/config.yml
+        uid: "568"
+        gid: "568"
+        mode: 0440
+    volumes:
+      - /mnt/spool/apps/config/nod/cloudflared:/etc/cloudflared/creds
+    depends_on:
+      server:
+        condition: service_healthy
+    networks:
+      - nod-edge
+    restart: unless-stopped
+
+configs:
+  cloudflared:
+    content: |
+      tunnel: f7bc333c-cd2b-4d7d-b98d-bc93d0cabd1c
+      credentials-file: /etc/cloudflared/creds/tunnel.json
+      ingress:
+        # No Cloudflare Access here on purpose: nod's desktop app cannot pass
+        # it. The gate is NOD_AUTH_TOKEN. cloudflared forwards the public Host
+        # header unchanged, which nod requires.
+        - hostname: nod.alekseev.us
+          service: http://nod-server:4310
+        - service: http_status:404
+
+secrets:
+  nod_env:
+    file: /mnt/spool/apps/config/nod/env
+  nod_db_password:
+    file: /mnt/spool/apps/config/nod/db_password
+
+networks:
+  # server <-> postgres
+  backend:
+    internal: true
+  # server <-> runtime (docker socket proxy)
+  control:
+    internal: true
+  # server egress
+  outbound:
+  # browser egress
+  browser:
+  # workspace egress, through the firewall sidecar
+  workspace:
+  # cloudflared <-> server
+  nod-edge:
+  # Created out-of-band on the host: `docker network create shared-services`.
+  # Only the server joins it, to reach codex-lb by name.
+  shared-services:
+    external: true
+
+volumes:
+  # Named volumes backed by ZFS datasets rather than plain binds: Docker copies
+  # image content into an empty named volume on first use, and
+  # workspace-tools:/home/node depends on that.
+  server-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/spool/apps/data/nod/server
+  workspace-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/spool/apps/data/nod/workspaces
+  workspace-tools:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/spool/apps/data/nod/workspace-tools
+  browser-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/spool/apps/data/nod/browser
