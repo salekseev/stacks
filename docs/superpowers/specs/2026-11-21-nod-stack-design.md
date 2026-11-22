@@ -273,3 +273,11 @@ restoring the ZFS snapshot of `data/nod` and `config/nod` together.
 - `postgres-backup-local` sidecar as in hindsight
 - Telegram polling channel
 - Voice, if a direct OpenAI key is ever acceptable
+- Stealth browser binary. Upstream's `nod-browser` image installs Debian's
+  `chromium` package and drives it with the `agent-browser` CLI through the
+  wrapper `src/providers/container-browser/chromium.sh`, headed under Xvfb.
+  Because this repo builds the image, a later overlay Dockerfile
+  (`FROM nod-browser`, replace the binary the wrapper executes) can swap in a
+  Chromium-compatible build such as CloakBrowser without forking Nod. Camoufox
+  is Firefox-based and would need the browser worker's driver replaced, which
+  is a fork.
