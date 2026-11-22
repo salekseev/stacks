@@ -292,3 +292,26 @@ restoring the ZFS snapshot of `data/nod` and `config/nod` together.
   Chromium-compatible build such as CloakBrowser without forking Nod. Camoufox
   is Firefox-based and would need the browser worker's driver replaced, which
   is a fork.
+  agent-browser's `obscura` engine (stealth mode) was researched on 2026-11-21
+  and rejected. Nod pins agent-browser 0.39.2, which has the engine, but Nod
+  hard-codes `--profile`, `--headed`, `--proxy-bypass` and `--args`
+  (`src/providers/agent-browser/index.ts:554-587`), all of which agent-browser
+  refuses under obscura, and Nod strips `AGENT_BROWSER_*` from the child
+  environment (`src/providers/process.ts:17-34`), so it cannot be enabled from
+  compose. Obscura also has no persistent profiles, so logins would not
+  survive.
+  Also researched on 2026-11-21 and rejected: Steel Browser (a session server
+  on the same stock Debian `chromium`, with JS fingerprint injection) and
+  rayobrowse (closed binary, no self-hosted persistent profiles, needs
+  `seccomp=unconfined`). Both would need a patch to Nod's launch code.
+  Fortress (`tiliondev/fortress`) is the only one that fits behind
+  `chromium.sh`; its results are vendor-claimed only.
+  Order to try, cheapest first, from a reading of `techinz/browsers-benchmark`
+  (one run per engine, ten sites, no clicks, a different proxy per engine, so
+  weak evidence): (1) measure the stock browser against the sites that matter;
+  (2) overlay that installs `google-chrome-stable` and points `chromium.sh` at
+  it, which is what every top-scoring engine in that benchmark runs;
+  (3) remove Nod's 1440x900 viewport emulation
+  (`src/providers/container-browser/config.ts:17`), a Nod patch; (4) Fortress,
+  only if a specific site still fails. Headed mode, which Nod already uses, is
+  the one factor that benchmark clearly separates.
