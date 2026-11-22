@@ -16,20 +16,34 @@
 # audio so Yandex hears the name. A fresh install would start in relay; this
 # file sets gateway mode so the routes above apply.
 #
-# The published image has no local recognizer (no ONNX Runtime). DuoWave does
-# not publish an ASR image, and this file has no build: key, because Portainer
-# Git deploy builds whenever build: is present and that build cannot write
-# inside the Portainer container. Recognition stays at the image default,
-# http://127.0.0.1:8090/v1, until an OpenAI-compatible ASR URL is set.
+# The published gateway image has no local recognizer. Hearing is the asr
+# service: DuoWave's GigaAM server, built from stacks/duowave/asr (upstream
+# commit in UPSTREAM) and pulled from ghcr. This file has no build: key.
+# Portainer Git deploy builds whenever build: is present, and that build
+# cannot write inside the Portainer container. The recognizer is not published
+# on the host. The first start downloads GigaAM v3 into the cache (~450 MB)
+# before /health answers.
 #
 # LLM_API_KEY is taken at start from OPENAI_API_KEY in the existing host file,
 # mounted by the daemon. Portainer does not open that file. The data directory
 # must exist and be writable by uid 1000 before the first start:
 #   install -d -o 1000 -g 1000 /mnt/spool/apps/data/duowave
 #
-# Image: ghcr.io/duowaveai/duowave/gateway:0.18.1
+# Images: ghcr.io/duowaveai/duowave/gateway:0.18.1
+#         ghcr.io/salekseev/duowave-asr:1d35ba1
 
 services:
+  asr:
+    image: ghcr.io/salekseev/duowave-asr:1d35ba1
+    container_name: duowave-asr
+    restart: unless-stopped
+    environment:
+      GIGAAM_DEVICE: cpu
+    networks:
+      - asr
+    volumes:
+      - /mnt/spool/apps/data/duowave/asr-cache:/cache
+
   gateway:
     image: ghcr.io/duowaveai/duowave/gateway:0.18.1@sha256:cacbc4af0fbb1166b27acfce568552ef685e9c6ebd138e1e8afee81b913a6a79
     container_name: duowave-gateway
@@ -41,6 +55,7 @@ services:
       iot:
         ipv4_address: 192.168.99.10
       shared-services: {}
+      asr: {}
     # The image runs as uid 1000. The secret file on the host is that uid,
     # mode 600, so the process can read it. Only OPENAI_API_KEY is copied out.
     entrypoint:
@@ -79,7 +94,7 @@ services:
       YANDEX_VOICE: music
       STATION_PAIRING: tofu
       PANEL_REMOTE: "false"
-      ASR_BASE_URL: http://127.0.0.1:8090/v1
+      ASR_BASE_URL: http://asr:8090/v1
     volumes:
       - /mnt/spool/apps/data/duowave:/data
 
@@ -93,6 +108,9 @@ networks:
   # The gateway reaches codex-lb (stacks/codex-lb.yaml) by name here.
   shared-services:
     external: true
+  # Gateway to the recognizer. Not the IoT VLAN and not shared-services.
+  asr:
+    driver: bridge
   iot:
     driver: ipvlan
     driver_opts:
