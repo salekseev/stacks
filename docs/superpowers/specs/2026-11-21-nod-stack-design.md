@@ -315,3 +315,28 @@ restoring the ZFS snapshot of `data/nod` and `config/nod` together.
   (`src/providers/container-browser/config.ts:17`), a Nod patch; (4) Fortress,
   only if a specific site still fails. Headed mode, which Nod already uses, is
   the one factor that benchmark clearly separates.
+
+## 13. As-built (2026-11-21)
+
+Deployed from `master` through Portainer as stack `nod`; upstream pin `1b42e68`.
+
+**Differences from the design above.**
+
+- Host layout: two datasets (`spool/apps/data/nod`, `spool/apps/config/nod`) with plain subdirectories, not five child datasets. Ownership is as in 5.4 and the stack header.
+- `NOD_AUTH_TOKEN`, `NOD_VAULT_KEY` and `NOD_POSTGRES_PASSWORD` were generated on the host with `openssl`.
+- Tunnel `nod`, ID `f7bc333c-cd2b-4d7d-b98d-bc93d0cabd1c`, CNAME `nod.alekseev.us`. The account-wide `cert.pem` used to create it was shredded.
+- The four GHCR packages were already public after the first push.
+- The image workflows pin their actions by commit SHA.
+
+**Verified.** All seven containers start; `nod-server`, `nod-postgres`, `nod-browser-nod` and `nod-workspace-network` report healthy. The owner signed in at `https://nod.alekseev.us` and chatted. codex-lb logs the requests under user agent `pi/1.5.2` with model `gpt-6.2-sol`. Postgres 18 ran the migrations.
+
+**Not recorded.** Whether copy-up populated `workspace-tools`, the context window codex-lb reports for `gpt-6.2-sol`, a shell tool call, a browser task, and whether the WAF rule from section 7 exists. Step 6 of section 9 holds; steps 3 to 5 were not run as written.
+
+**Behaviour observed through codex-lb.**
+
+- *Cancelled requests are expected.* codex-lb logs some Nod requests as `cancelled / client_disconnected`, about 20 to 50 ms after the first token. Nod aborts them itself: stale onboarding suggestions (`src/server/onboarding-suggestions.ts`), and Pi's cache warmer, which sends a small request after a turn and aborts it when the next turn starts.
+- *No prompt caching and no upstream WebSocket.* Nod's `compatible` provider is hard-coded to Chat Completions and sends no session ID or `prompt_cache_key`, so codex-lb logs `sticky=False upstream_stream_transport=http`. Over the first 45 successful requests Nod sent 264,995 input tokens with 0 cached; hindsight, on `/v1/responses` with a session ID, had 41% cached over the same day. Each turn resends 10 to 14k tokens, and the cache-warm requests buy nothing.
+- *`account_response_create_cap` warnings are harmless.* Nod's bursts exceed four concurrent creates on one account and codex-lb moves the request to the other account.
+- *The `pay` tool failed with 400 until codex-lb was patched.* See section 13 of `2026-11-17-codex-lb-gateway-design.md`.
+
+**Follow-up: caching.** Upstream Nod has no issue or pull request for a Responses API mode on the compatible provider (searched 2026-11-21). Pi can already send `prompt_cache_key` and session-affinity headers (`x-session-id`, `session_id`) on Chat Completions, but only when the model's `compat` block enables them, and Nod's compatible provider does not (`src/providers/pi/models.ts:392`; Nod PR #385 says its cache key change "changes nothing for … OpenAI-compatible servers"). codex-lb reads both `prompt_cache_key` and the `session_id` header. Enabling those `compat` flags is therefore a smaller change than switching the provider to the Responses API. It is untested, and it is a patch to Nod's source either way.
