@@ -24,9 +24,13 @@
 #   /mnt/spool/apps/data/nod/workspace-tools  1000:1000  -> workspace /home/node
 #   /mnt/spool/apps/data/nod/browser          1000:1000 0700 -> browser /data
 #   /mnt/spool/apps/data/nod/postgres         568:568    -> Postgres
-#   /mnt/spool/apps/config/nod/env            1000:1000 0400  (server secrets)
-#   /mnt/spool/apps/config/nod/db_password    568:568   0400  (same DB password)
-#   /mnt/spool/apps/config/nod/cloudflared/tunnel.json  568:568
+#   /mnt/spool/apps/config/nod/env            1000:1000 0600  (server secrets)
+#   /mnt/spool/apps/config/nod/db_password    1000:568  0640  (same DB password)
+#   /mnt/spool/apps/config/nod/cloudflared/   1000:568  2750  (setgid: files get gid 568)
+#   /mnt/spool/apps/config/nod/cloudflared/tunnel.json  0640, group 568
+# The two dataset roots are 1000:568 0770. uid 1000 is the host admin account,
+# so config is editable without sudo; uid 568 containers (postgres,
+# cloudflared) read through the group.
 # Nod's own containers run as `node` (uid 1000), not 568; the workspace also
 # runs commands as uids 20000-59999 gid 1002.
 #

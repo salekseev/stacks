@@ -163,8 +163,13 @@ Two host files, declared as Compose `secrets` so the daemon resolves the paths:
 
 | File | Owner, mode | Used by | Contents |
 |---|---|---|---|
-| `/mnt/spool/apps/config/nod/env` | `1000:1000`, `0400` | `server` | `NOD_AUTH_TOKEN`, `NOD_VAULT_KEY`, `NOD_POSTGRES_PASSWORD`, `OPENAI_COMPATIBLE_API_KEY` |
-| `/mnt/spool/apps/config/nod/db_password` | `568:568`, `0400` | `postgres` | the same Postgres password, via `POSTGRES_PASSWORD_FILE` |
+| `/mnt/spool/apps/config/nod/env` | `1000:1000`, `0600` | `server` | `NOD_AUTH_TOKEN`, `NOD_VAULT_KEY`, `NOD_POSTGRES_PASSWORD`, `OPENAI_COMPATIBLE_API_KEY` |
+| `/mnt/spool/apps/config/nod/db_password` | `1000:568`, `0640` | `postgres` | the same Postgres password, via `POSTGRES_PASSWORD_FILE` |
+
+uid 1000 is also the host admin account on silverstone, so these files are
+editable without sudo; the uid 568 containers read through group 568. The two
+dataset roots are `1000:568`, `0770`, and `config/nod/cloudflared` is setgid
+(`2750`) so `tunnel.json` inherits group 568 (it needs mode `0640`).
 
 The `server` entrypoint becomes:
 
