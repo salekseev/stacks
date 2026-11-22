@@ -23,7 +23,15 @@
 services:
 
   codex-lb:
-    image: ghcr.io/soju06/codex-lb:1.24.0
+    # Upstream 1.24.0 plus unreleased PR soju06/codex-lb#2692, built by
+    # .github/workflows/codex-lb-image.yml from stacks/codex-lb/Dockerfile.
+    # Without it, a chat-completions tool with `strict` omitted is forwarded to
+    # the Responses API as strict, and nod's `pay` tool fails the whole request
+    # with 400 invalid_json_schema. Only the chat-completions conversion
+    # changes; /v1/responses consumers (hindsight) are untouched.
+    # Return to ghcr.io/soju06/codex-lb once a release contains the fix: the
+    # Dockerfile's patch step fails the build when that happens.
+    image: ghcr.io/salekseev/codex-lb:1.24.0-pr2692
     container_name: codex-lb
     hostname: codex-lb
     user: "568:568"
