@@ -28,6 +28,12 @@
       "enabled": false
     },
     {
+      "description": "our codex-lb image is the upstream release plus a patch (stacks/codex-lb/Dockerfile) and is rebuilt by CI; upstream bumps arrive through the FROM line there, not docker tag lookups",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["ghcr.io/salekseev/codex-lb"],
+      "enabled": false
+    },
+    {
       "description": "Pin digests for rolling tags to track underlying image changes",
       "matchDatasources": [
         "docker"

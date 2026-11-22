@@ -1,0 +1,80 @@
+# Builds codex-lb with upstream PR #2692 applied (stacks/codex-lb/Dockerfile)
+# and publishes it as a ghcr.io package. Temporary: remove once a codex-lb
+# release contains the fix (soju06/codex-lb#2691).
+#
+# Tag contract: <base version>-pr2692, where the base version is read from the
+# FROM line of the Dockerfile — derived, never hand-written. Renovate bumps
+# that FROM line; stacks/codex-lb.yaml must be bumped to the matching tag in
+# the same change. PRs build for verification (no push); master pushes.
+name: codex-lb image
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - stacks/codex-lb/**
+      - .github/workflows/codex-lb-image.yml
+  pull_request:
+    paths:
+      - stacks/codex-lb/**
+      - .github/workflows/codex-lb-image.yml
+  workflow_dispatch:
+
+concurrency:
+  group: codex-lb-image-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Image coordinates (tag = base version + patch)
+        id: meta
+        run: |
+          version=$(sed -nE 's#^FROM ghcr\.io/soju06/codex-lb:([0-9][^@ ]*).*#\1#p' stacks/codex-lb/Dockerfile)
+          test -n "$version"
+          echo "tag=${version}-pr2692" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/${{ github.repository_owner }}/codex-lb" >> "$GITHUB_OUTPUT"
+
+      - name: Login to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: stacks/codex-lb
+          platforms: linux/amd64
+          load: ${{ github.event_name == 'pull_request' }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}
+          cache-from: type=gha,scope=codex-lb
+          cache-to: type=gha,scope=codex-lb,mode=max
+
+      # The fix in one assertion: a chat tool with `strict` omitted must come
+      # out as strict=false, and an explicit strict=true must survive.
+      - name: Verify the patched conversion
+        if: github.event_name == 'pull_request'
+        run: |
+          docker run --rm --entrypoint python "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}" -c "
+          from app.core.openai.chat_requests import _normalize_chat_tools as n
+          p = {'type': 'object', 'properties': {}}
+          r = n([
+              {'type': 'function', 'function': {'name': 'omitted', 'parameters': p}},
+              {'type': 'function', 'function': {'name': 'explicit', 'parameters': p, 'strict': True}},
+          ])
+          got = [(t['name'], t.get('strict')) for t in r]
+          assert got == [('omitted', False), ('explicit', True)], got
+          print(got)
+          "
