@@ -77,12 +77,18 @@ Modeled on `v3rt3p-images.yml`: pull requests build without pushing; pushes to
 | `ghcr.io/salekseev/nod-server` | `stacks/nod/upstream` | `deployment/self-host/Dockerfile` |
 | `ghcr.io/salekseev/nod-browser` | `stacks/nod/upstream` | `Dockerfile.browser` |
 | `ghcr.io/salekseev/nod-workspace` | `stacks/nod/upstream` | `Dockerfile.workspace` |
-| `ghcr.io/salekseev/nod-runtime` | `stacks/nod/upstream` | `stacks/nod/runtime.Dockerfile` (ours) |
+| `ghcr.io/salekseev/nod-runtime` | `stacks/nod/upstream/deployment/self-host` | `stacks/nod/runtime.Dockerfile` (ours) |
 
 `stacks/nod/runtime.Dockerfile` is the same digest-pinned
 `node:24.21.0-bookworm-slim` base upstream uses for `runtime`, plus
-`COPY deployment/self-host/docker-proxy.mjs /app/docker-proxy.mjs`. It replaces
-the relative bind mount.
+`COPY docker-proxy.mjs /app/docker-proxy.mjs`. It replaces the relative bind
+mount. Its context is narrower than the others because upstream's root
+`.dockerignore` excludes `docker-proxy.mjs`.
+
+The `server` healthcheck (`/app/healthcheck.mjs`) authenticates with
+`NOD_AUTH_TOKEN`. Healthchecks see the container's configured environment, not
+variables the entrypoint sourced, so the healthcheck command sources the same
+secret file.
 
 The packages must be public (or silverstone must be logged in to GHCR) before
 the first deploy. Nod is Apache-2.0, so publishing the images is permitted.
