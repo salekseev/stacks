@@ -267,7 +267,7 @@ services:
 configs:
   cloudflared:
     content: |
-      tunnel: 00000000-0000-0000-0000-000000000000
+      tunnel: f7bc333c-cd2b-4d7d-b98d-bc93d0cabd1c
       credentials-file: /etc/cloudflared/creds/tunnel.json
       ingress:
         # No Cloudflare Access here on purpose: nod's desktop app cannot pass
