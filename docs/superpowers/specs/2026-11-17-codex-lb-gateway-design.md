@@ -219,3 +219,13 @@ The edge network is IPv4-only (`EnableIPv6=false`, `172.31.255.248/29`). The con
 **Embeddings.** The subscriptions cannot serve embeddings; the Codex backend has none. codex-lb's `/v1/embeddings` forwards only to separately configured model sources. Hindsight keeps local TEI. `HINDSIGHT_API_EMBEDDINGS_OPENAI_API_KEY` and the LiteLLM comment blocks in hindsight's secret file are unused leftovers.
 
 **hs-decide-1-flash feasibility (follow-up input).** silverstone's GPU is an NVIDIA RTX A400 (4 GB). About 1.4 GB is used by Frigate, ffmpeg and two TEI routers, which leaves about 2.6 GB. A 0.8B bf16 model needs about 1.6 GB for weights alone. It only fits with a reduced `--max-model-len`, a lowered `--gpu-memory-utilization`, `--enforce-eager`, and `HINDSIGHT_API_DECISION_MODEL_MAX_REQUEST_TOKENS` sized to match. The card has no FP8. Frigate memory spikes are the main risk. The follow-up spec must measure before committing.
+
+## 13. Patched image (2026-11-21)
+
+The stack runs `ghcr.io/salekseev/codex-lb:1.24.0-pr2692`, built here from the published 1.24.0 image plus the one-file change of upstream PR soju06/codex-lb#2692 (`stacks/codex-lb/Dockerfile`, `.github/workflows/codex-lb-image.yml`).
+
+**Defect.** The nod stack calls codex-lb over Chat Completions. codex-lb converts those requests to the Responses API and passed an omitted tool `strict` flag through unchanged. Chat Completions treats omitted as non-strict; Responses treats it as strict. Nod's `pay` tool schema (allOf + anyOf) cannot be compiled strictly, so any request carrying it failed with `400 invalid_json_schema` ("required property 'fields' is unsatisfiable"). Probed through the gateway with the nod key: `strict` omitted returned 400, `strict: false` returned 200. Upstream issue soju06/codex-lb#2691.
+
+**Scope.** Only `app/core/openai/chat_requests.py` changes, and only the chat-completions path calls `_normalize_chat_tools`. Hindsight uses `/v1/responses` and is not affected. Yandex-station and nod use chat completions; for them an omitted `strict` now means `false`, which is the Chat Completions default.
+
+**Exit.** Renovate bumps the `FROM` line in `stacks/codex-lb/Dockerfile`. When a release contains the fix, the `patch` step fails the build. Then delete the Dockerfile, the workflow and the Renovate rule, and point the stack back at `ghcr.io/soju06/codex-lb`.
