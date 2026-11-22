@@ -1,0 +1,104 @@
+# $schema: https://raw.githubusercontent.com/compose-spec/compose-spec/refs/heads/main/schema/compose-spec.json
+#
+# DuoWave gateway for the Yandex Station Midi. Replaces the v3rt3p stack in
+# stacks/yandex-station.yaml as the thing the speaker talks to. That file and
+# its volumes stay. This stack does not start them.
+#
+# The speaker reaches the gateway on the IoT VLAN at 192.168.99.10:7780.
+# ipvlan L2 parent ens1f0v2 is the VLAN 99 access port. Publishing a host port
+# does not put the process on that address, so the gateway listens on 7780
+# itself (PORT and PUBLIC_PORT). Nothing is bound on the host, so TrueNAS
+# keeps *:80 and *:443.
+#
+# Conversation uses gpt-6-luna through codex-lb on the shared-services network.
+# Speech is Yandex's voice. Music, weather, timers, alarms, reminders, smart
+# home, tales, and radio are sent to Yandex. Music is relayed as the station's
+# audio so Yandex hears the name. A fresh install would start in relay; this
+# file sets gateway mode so the routes above apply.
+#
+# The published image has no local recognizer (no ONNX Runtime). DuoWave does
+# not publish an ASR image, and this file has no build: key, because Portainer
+# Git deploy builds whenever build: is present and that build cannot write
+# inside the Portainer container. Recognition stays at the image default,
+# http://127.0.0.1:8090/v1, until an OpenAI-compatible ASR URL is set.
+#
+# LLM_API_KEY is taken at start from OPENAI_API_KEY in the existing host file,
+# mounted by the daemon. Portainer does not open that file. The data directory
+# must exist and be writable by uid 1000 before the first start:
+#   install -d -o 1000 -g 1000 /mnt/spool/apps/data/duowave
+#
+# Image: ghcr.io/duowaveai/duowave/gateway:0.18.1
+
+services:
+  gateway:
+    image: ghcr.io/duowaveai/duowave/gateway:0.18.1@sha256:cacbc4af0fbb1166b27acfce568552ef685e9c6ebd138e1e8afee81b913a6a79
+    container_name: duowave-gateway
+    restart: unless-stopped
+    # iot is listed first so the default route is the IoT gateway (Yandex).
+    # shared-services is how this service reaches codex-lb. Listing any
+    # network drops the implicit default.
+    networks:
+      iot:
+        ipv4_address: 192.168.99.10
+      shared-services: {}
+    # The image runs as uid 1000. The secret file on the host is that uid,
+    # mode 600, so the process can read it. Only OPENAI_API_KEY is copied out.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        key=$$(awk -F= '$$1=="OPENAI_API_KEY"{print substr($$0, index($$0,$$2)); exit}' /run/secrets/duowave_env)
+        if [ -z "$$key" ]; then
+          echo "OPENAI_API_KEY is missing from the DuoWave secret file" >&2
+          exit 1
+        fi
+        export LLM_API_KEY="$$key"
+        unset key
+        exec duowave serve
+    secrets:
+      - duowave_env
+    environment:
+      DATA_DIR: /data
+      PORT: "7780"
+      PUBLIC_PORT: "7780"
+      VAD_ENGINE: energy
+      DUOWAVE_MANAGED: docker
+      TZ: America/New_York
+      UNIPROXY_MODE: gateway
+      UNIPROXY_PATH: /uni.ws
+      YANDEX_UNIPROXY_URL: wss://uniproxy.alice.yandex.net/uni.ws
+      TTS_PROVIDER: yandex
+      DIALOG_PROVIDER: openai
+      LLM_BASE_URL: http://codex-lb:2455/v1
+      LLM_MODEL: gpt-6-luna
+      LLM_MODEL_FAST: gpt-6-luna
+      LLM_MODEL_SMART: gpt-6-luna
+      LLM_EFFORT: low
+      ROUTE_DEFAULT: own,yandex
+      ROUTES: music=yandex;weather=yandex;timers=yandex;alarms=yandex;reminders=yandex;smart_home=yandex;tales=yandex;radio=yandex
+      YANDEX_VOICE: music
+      STATION_PAIRING: tofu
+      PANEL_REMOTE: "false"
+      ASR_BASE_URL: http://127.0.0.1:8090/v1
+    volumes:
+      - /mnt/spool/apps/data/duowave:/data
+
+secrets:
+  # Daemon bind-mounts this host file at /run/secrets/duowave_env.
+  duowave_env:
+    file: /mnt/spool/apps/config/yandex-station/v3rt3p/.env
+
+networks:
+  # Created out-of-band: `docker network create shared-services`.
+  # The gateway reaches codex-lb (stacks/codex-lb.yaml) by name here.
+  shared-services:
+    external: true
+  iot:
+    driver: ipvlan
+    driver_opts:
+      parent: ens1f0v2
+      ipvlan_mode: l2
+    ipam:
+      config:
+        - subnet: 192.168.99.0/24
+          gateway: 192.168.99.1
