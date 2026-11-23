@@ -1,11 +1,12 @@
-# Builds the nod images from the vendored n8n-io/nod submodule and publishes
-# them as ghcr.io packages. Upstream publishes no images, and Portainer Git
-# deploy cannot build.
+# Builds the nod images from an n8n-io/nod release and publishes them as
+# ghcr.io packages. Upstream publishes no images, and Portainer Git deploy
+# cannot build.
 #
-# Tag contract: each image is tagged with the SHORT SHA (7) of the
-# stacks/nod/upstream submodule pin — derived, never hand-written.
-# stacks/nod.yaml pins image: to the same SHA; bump the submodule and the image
-# tags together in one commit. PRs build for verification (no push); master pushes.
+# Tag contract: the image tags in stacks/nod.yaml are the only pin. All of them
+# carry one version X.Y.Z; this workflow reads it, checks out upstream tag
+# nod-vX.Y.Z and tags the images X.Y.Z. Renovate bumps the tags from upstream
+# releases (customManagers in renovate.json). PRs build for verification (no
+# push); master pushes.
 #
 # Design: docs/superpowers/specs/2026-11-21-nod-stack-design.md
 # Plan:   docs/superpowers/plans/2026-11-21-nod-stack.md
@@ -41,33 +42,43 @@ jobs:
       matrix:
         include:
           - image: server
-            context: stacks/nod/upstream
-            dockerfile: stacks/nod/upstream/deployment/self-host/Dockerfile
+            context: upstream
+            dockerfile: upstream/deployment/self-host/Dockerfile
           - image: browser
-            context: stacks/nod/upstream
-            dockerfile: stacks/nod/upstream/Dockerfile.browser
+            context: upstream
+            dockerfile: upstream/Dockerfile.browser
           - image: workspace
-            context: stacks/nod/upstream
-            dockerfile: stacks/nod/upstream/Dockerfile.workspace
+            context: upstream
+            dockerfile: upstream/Dockerfile.workspace
           # Ours: bakes upstream's docker-proxy.mjs into the node base image.
           # Narrower context because upstream's root .dockerignore excludes
           # docker-proxy.mjs.
           - image: runtime
-            context: stacks/nod/upstream/deployment/self-host
+            context: upstream/deployment/self-host
             dockerfile: stacks/nod/runtime.Dockerfile
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          submodules: recursive
 
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-
-      - name: Image coordinates (tag = submodule short SHA)
+      - name: Image coordinates (tag = the one version pinned in stacks/nod.yaml)
         id: meta
         run: |
-          short=$(git -C stacks/nod/upstream rev-parse --short=7 HEAD)
-          echo "tag=${short}" >> "$GITHUB_OUTPUT"
+          versions=$(grep -oP 'image: ghcr\.io/salekseev/nod-[a-z]+:\K\S+' stacks/nod.yaml | sort -u)
+          if ! [[ "$versions" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::stacks/nod.yaml must pin every nod image to one X.Y.Z version, found: ${versions//$'\n'/ }"
+            exit 1
+          fi
+          echo "tag=${versions}" >> "$GITHUB_OUTPUT"
           echo "image=ghcr.io/${{ github.repository_owner }}/nod-${{ matrix.image }}" >> "$GITHUB_OUTPUT"
+
+      - name: Check out n8n-io/nod at the pinned release
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: n8n-io/nod
+          ref: nod-v${{ steps.meta.outputs.tag }}
+          path: upstream
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Login to GHCR
         if: github.event_name != 'pull_request'

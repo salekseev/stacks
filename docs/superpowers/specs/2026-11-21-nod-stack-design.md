@@ -66,6 +66,9 @@ Bumping Nod is one commit that moves the submodule and the four tags.
 Add a Renovate package rule next to the existing v3rt3p rule so the `nod-*`
 images are not looked up as Docker tags.
 
+*Superseded 2026-11-22; see section 14.* The submodule is gone and the image
+tags carry the upstream release version.
+
 ### 4.2 Workflow `.github/workflows/nod-images.yml`
 
 Modeled on `v3rt3p-images.yml`: pull requests build without pushing; pushes to
@@ -335,8 +338,38 @@ Deployed from `master` through Portainer as stack `nod`; upstream pin `1b42e68`.
 **Behaviour observed through codex-lb.**
 
 - *Cancelled requests are expected.* codex-lb logs some Nod requests as `cancelled / client_disconnected`, about 20 to 50 ms after the first token. Nod aborts them itself: stale onboarding suggestions (`src/server/onboarding-suggestions.ts`), and Pi's cache warmer, which sends a small request after a turn and aborts it when the next turn starts.
-- *No prompt caching and no upstream WebSocket.* Nod's `compatible` provider is hard-coded to Chat Completions and sends no session ID or `prompt_cache_key`, so codex-lb logs `sticky=False upstream_stream_transport=http`. Over the first 45 successful requests Nod sent 264,995 input tokens with 0 cached; hindsight, on `/v1/responses` with a session ID, had 41% cached over the same day. Each turn resends 10 to 14k tokens, and the cache-warm requests buy nothing.
+- *Little prompt caching and no upstream WebSocket.* Nod's `compatible` provider is hard-coded to Chat Completions and sends no session ID or `prompt_cache_key`, so codex-lb logs `sticky=False upstream_stream_transport=http`. Over the first 45 successful requests Nod sent 264,995 input tokens with 0 cached; hindsight, on `/v1/responses` with a session ID, had 41% cached over the same day.
+  *Corrected 2026-11-22.* The missing key is not what prevents caching: codex-lb derives a `prompt_cache_key` itself, and three identical requests through it reached 5,504 of 5,619 input tokens cached. A capture of Nod's traffic showed its requests are cacheable: within a session the system prompt and tool definitions are byte-identical and messages are append-only. In that window 483 requests carried 966,166 input tokens, of which 140,288 were cached, all on the 24 requests over 10k tokens. Hits came after several consecutive requests of one session. Misses coincided with two sessions interleaving (main chat and a saved-task session with a different system prompt and tool set), with requests moving between the two upstream accounts after `account_response_create_cap`, and with errors. Which of these dominates is not established. 432 of the 483 requests were under 2k tokens; what sends them is not identified.
 - *`account_response_create_cap` warnings are harmless.* Nod's bursts exceed four concurrent creates on one account and codex-lb moves the request to the other account.
 - *The `pay` tool failed with 400 until codex-lb was patched.* See section 13 of `2026-11-17-codex-lb-gateway-design.md`.
 
 **Follow-up: caching.** Upstream Nod has no issue or pull request for a Responses API mode on the compatible provider (searched 2026-11-21). Pi can already send `prompt_cache_key` and session-affinity headers (`x-session-id`, `session_id`) on Chat Completions, but only when the model's `compat` block enables them, and Nod's compatible provider does not (`src/providers/pi/models.ts:392`; Nod PR #385 says its cache key change "changes nothing for … OpenAI-compatible servers"). codex-lb reads both `prompt_cache_key` and the `session_id` header. Enabling those `compat` flags is therefore a smaller change than switching the provider to the Responses API. It is untested, and it is a patch to Nod's source either way.
+
+## 14. Release tracking (2026-11-22)
+
+The submodule `stacks/nod/upstream` is removed. The image tags in
+`stacks/nod.yaml` are the only pin and carry the upstream release version, for
+example `0.9.1`. `nod-images.yml` reads that version, refuses to build unless
+every nod image has the same `X.Y.Z` tag, checks out `n8n-io/nod` at
+`nod-vX.Y.Z` and tags the images `X.Y.Z`.
+
+A Renovate regex custom manager in `renovate.json` reads the same tags and looks
+up `n8n-io/nod` GitHub releases, stripping the `nod-v` prefix. A bump is one pull
+request that changes the five tags; the pull-request build proves the release
+still builds. The existing grouping and automerge rules name only the `docker`
+and `github-tags` datasources, so Nod bumps are never automerged.
+
+Why not keep the submodule: Renovate's submodule manager is opt-in beta and
+would move only the submodule, not the tags in the stack file, so every bump
+would still need a hand edit.
+
+Costs accepted:
+
+- A release tag is mutable where a commit SHA was not. A rebuild after upstream
+  moves a tag would publish different code under the same image tag.
+- The bump pull request does not show upstream's compose changes. Compare
+  `deployment/` between the two tags before merging; the command is in the
+  header of `stacks/nod.yaml`.
+- The first pin under this scheme, `0.9.1`, is 32 commits older than the
+  `1b42e68` pin it replaces. Those commits add three nullable columns and drop
+  one index; nothing else in the schema changes.
