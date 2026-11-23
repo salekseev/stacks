@@ -42,9 +42,11 @@ jobs:
           - image: server
             context: upstream
             dockerfile: upstream/deployment/self-host/Dockerfile
+          # Upstream's Dockerfile with our stage appended (Chrome stable).
           - image: browser
             context: upstream
             dockerfile: upstream/Dockerfile.browser
+            overlay: stacks/nod/browser.Dockerfile
           - image: workspace
             context: upstream
             dockerfile: upstream/Dockerfile.workspace
@@ -87,6 +89,14 @@ jobs:
             exit 1
           fi
           echo "image=${base}" >> "$GITHUB_OUTPUT"
+
+      # A Dockerfile cannot FROM another Dockerfile, so the overlay's stage is
+      # appended and, being last, is what gets built. If upstream renames its
+      # `browser` stage the build fails instead of shipping its chromium.
+      - name: Append our stage to upstream's Dockerfile
+        if: matrix.overlay
+        run: |
+          { echo; cat "${{ matrix.overlay }}"; } >> "${{ matrix.dockerfile }}"
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 

@@ -16,6 +16,8 @@
 #       gh api repos/n8n-io/nod/compare/nod-v<old>...nod-v<new> \
 #         --jq '.files[].filename' | grep -E '^deployment/|^Dockerfile')
 #   - docker-proxy.mjs baked into nod-runtime instead of bind-mounted
+#   - nod-browser runs Google Chrome stable instead of Debian's chromium
+#     (stacks/nod/browser.Dockerfile)
 #   - secrets from host files via Docker secrets instead of env_file
 #   - Postgres 18 as 568:568; state in ZFS datasets
 #   - no host ports; reached through a Cloudflare tunnel
