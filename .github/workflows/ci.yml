@@ -41,7 +41,7 @@ jobs:
           # ci.yml itself counts for every image: a change here can break any of them.
           touched nod      '^(stacks/nod/|stacks/nod\.yaml$|\.github/workflows/(nod-images|ci)\.yml$)'
           touched v3rt3p   '^(stacks/yandex-station/|stacks/yandex-station\.yaml$|\.github/workflows/(v3rt3p-images|ci)\.yml$)'
-          touched codex-lb '^(stacks/codex-lb/|\.github/workflows/(codex-lb-image|ci)\.yml$)'
+          touched codex-lb '^(stacks/codex-lb/|stacks/codex-lb\.yaml$|\.github/workflows/(codex-lb-image|ci)\.yml$)'
 
   nod:
     needs: changes

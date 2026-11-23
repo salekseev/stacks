@@ -4,8 +4,9 @@
 #
 # Tag contract: <base version>-pr2692, where the base version is read from the
 # FROM line of the Dockerfile — derived, never hand-written. Renovate bumps
-# that FROM line; stacks/codex-lb.yaml must be bumped to the matching tag in
-# the same change. PRs build for verification (no push); master pushes.
+# that FROM line and the matching tag in stacks/codex-lb.yaml in one pull
+# request (customManagers in renovate.json); the build fails if the two
+# disagree. PRs build for verification (no push); master pushes.
 name: codex-lb image
 
 on:
@@ -13,6 +14,7 @@ on:
     branches: [master]
     paths:
       - stacks/codex-lb/**
+      - stacks/codex-lb.yaml
       - .github/workflows/codex-lb-image.yml
   # Pull requests run this through .github/workflows/ci.yml, which decides
   # from the changed paths whether to call it.
@@ -40,6 +42,10 @@ jobs:
         run: |
           version=$(sed -nE 's#^FROM ghcr\.io/soju06/codex-lb:([0-9][^@ ]*).*#\1#p' stacks/codex-lb/Dockerfile)
           test -n "$version"
+          if ! grep -qF "image: ghcr.io/salekseev/codex-lb:${version}-pr2692" stacks/codex-lb.yaml; then
+            echo "::error::stacks/codex-lb.yaml must run ghcr.io/salekseev/codex-lb:${version}-pr2692, the tag this build publishes"
+            exit 1
+          fi
           echo "tag=${version}-pr2692" >> "$GITHUB_OUTPUT"
           echo "image=ghcr.io/${{ github.repository_owner }}/codex-lb" >> "$GITHUB_OUTPUT"
 
