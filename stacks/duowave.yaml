@@ -79,7 +79,7 @@ services:
         fi
         export LLM_API_KEY="$$key"
         unset key
-        exec setpriv --reuid=1000 --regid=1000 --clear-groups --inh-caps=-all duowave serve
+        exec su -s /bin/sh duowave -c 'exec duowave serve'
     secrets:
       - duowave_env
     environment:
