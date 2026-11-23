@@ -17,7 +17,7 @@
 
 FROM ghcr.io/soju06/codex-lb:1.24.0@sha256:ba5598aaa70f7acf74a958139037604621ec2582a7fb5fe1e870f08bece807d6 AS base
 
-FROM alpine:3.22@sha256:49340b346798875b5592e5d420241f2f9cfba5f47e62ebb1446a1b34734e898f AS patched
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS patched
 COPY --from=base /app/app/core/openai/chat_requests.py /src/app/core/openai/chat_requests.py
 COPY patches/2692-chat-tool-strict-default.patch /src/fix.patch
 RUN apk add --no-cache patch && cd /src && patch -p1 < fix.patch
