@@ -12,5 +12,5 @@ gigaam[torch] @ https://github.com/salute-developers/GigaAM/archive/7447938d791c
 numpy==2.5.4
 # Parakeet TDT v3 (CC BY 4.0) through transformers; its mel filters come from librosa.
 transformers==5.22.1
-librosa==1.0.0
+librosa==1.0.1
 # Whisper is apart, in requirements-whisper.txt: faster-whisper's PyAV bundles FFmpeg with GPL x264 and x265.
