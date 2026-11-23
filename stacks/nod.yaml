@@ -7,8 +7,14 @@
 # flags (read_only, cap_drop, pids/mem limits, tmpfs) are upstream's — keep them.
 # Differences from upstream:
 #   - images pulled from ghcr.io/salekseev/nod-* (built by
-#     .github/workflows/nod-images.yml from the stacks/nod/upstream submodule;
-#     tag = submodule short SHA — bump both in one commit)
+#     .github/workflows/nod-images.yml from upstream release tag nod-v<tag>;
+#     the image tags below are the only pin and must all be the same version.
+#     Renovate bumps them from n8n-io/nod releases and automerges patch and
+#     minor bumps when the image build passes. Nothing checks that upstream's
+#     compose still matches this file, so after a bump compare the two and port
+#     any change here:
+#       gh api repos/n8n-io/nod/compare/nod-v<old>...nod-v<new> \
+#         --jq '.files[].filename' | grep -E '^deployment/|^Dockerfile')
 #   - docker-proxy.mjs baked into nod-runtime instead of bind-mounted
 #   - secrets from host files via Docker secrets instead of env_file
 #   - Postgres 18 as 568:568; state in ZFS datasets
@@ -42,7 +48,7 @@
 services:
 
   server:
-    image: ghcr.io/salekseev/nod-server:1b42e68
+    image: ghcr.io/salekseev/nod-server:0.9.1
     container_name: nod-server
     hostname: nod-server
     init: true
@@ -147,7 +153,7 @@ services:
   # exec + inspect on the two containers named below (no privileged, TTY,
   # detached or env-carrying execs). Reachable only on the internal control net.
   runtime:
-    image: ghcr.io/salekseev/nod-runtime:1b42e68
+    image: ghcr.io/salekseev/nod-runtime:0.9.1
     container_name: nod-runtime
     init: true
     environment:
@@ -165,7 +171,7 @@ services:
     restart: unless-stopped
 
   browser:
-    image: ghcr.io/salekseev/nod-browser:1b42e68
+    image: ghcr.io/salekseev/nod-browser:0.9.1
     # The name is part of the runtime allowlist (must match BROWSER_CONTAINER).
     container_name: nod-browser-nod
     hostname: nod-browser
@@ -197,7 +203,7 @@ services:
     restart: unless-stopped
 
   workspace:
-    image: ghcr.io/salekseev/nod-workspace:1b42e68
+    image: ghcr.io/salekseev/nod-workspace:0.9.1
     # The name is part of the runtime allowlist (must match WORKSPACE_CONTAINER).
     container_name: nod-workspace-nod
     init: true
@@ -220,7 +226,7 @@ services:
   # Firewall for the workspace: blocks private/reserved IPv4 (so the agent's
   # shell cannot reach the LAN, codex-lb or cloud metadata) and external IPv6.
   workspace-network:
-    image: ghcr.io/salekseev/nod-workspace:1b42e68
+    image: ghcr.io/salekseev/nod-workspace:0.9.1
     container_name: nod-workspace-network
     dns: [1.1.1.1, 8.8.8.8]
     user: root

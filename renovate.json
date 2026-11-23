@@ -14,6 +14,17 @@
   "assignees": [
     "@salekseev"
   ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "nod image tags in stacks/nod.yaml are the upstream version; .github/workflows/nod-images.yml builds them from release tag nod-v<version>",
+      "managerFilePatterns": ["/^stacks/nod\\.yaml$/"],
+      "matchStrings": ["image: ghcr\\.io/salekseev/nod-[a-z]+:(?<currentValue>\\S+)"],
+      "depNameTemplate": "n8n-io/nod",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^nod-v(?<version>.+)$"
+    }
+  ],
   "packageRules": [
     {
       "description": "v3rt3p images are pinned to their submodule SHA and rebuilt by CI; bumps come from submodule updates (same commit), not docker tag lookups",
@@ -22,7 +33,7 @@
       "enabled": false
     },
     {
-      "description": "nod images are pinned to the stacks/nod/upstream submodule SHA and rebuilt by CI; bumps come from submodule updates (same commit), not docker tag lookups",
+      "description": "nod images are built by CI from upstream releases; bumps come from the n8n-io/nod custom manager above, not docker tag lookups (a tag exists only after the bump is merged)",
       "matchDatasources": ["docker"],
       "matchPackageNames": ["ghcr.io/salekseev/nod-{/,}**"],
       "enabled": false
@@ -98,6 +109,18 @@
         "major"
       ],
       "groupName": null
+    },
+    {
+      "description": "Automerge nod patch and minor releases once the image build passes; nod is 0.x and ships features in patch releases, so its minors are treated like patches. Major bumps wait for review",
+      "matchDatasources": ["github-releases"],
+      "matchPackageNames": ["n8n-io/nod"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true,
+      "labels": [
+        "dependencies",
+        "renovate",
+        "automerge"
+      ]
     }
   ],
   "labels": [
