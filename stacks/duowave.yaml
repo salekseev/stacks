@@ -40,7 +40,7 @@ services:
     environment:
       GIGAAM_DEVICE: cpu
     networks:
-      - voice
+      - hear
     volumes:
       - /mnt/spool/apps/data/duowave/asr-cache:/cache
 
@@ -59,7 +59,7 @@ services:
       iot:
         ipv4_address: 192.168.99.10
       shared-services: {}
-      voice: {}
+      hear: {}
     # The route is set as root. The server then runs as uid 1000, which can
     # read the secret file (mode 600). Only OPENAI_API_KEY is copied out.
     entrypoint:
@@ -118,9 +118,8 @@ networks:
   # The gateway reaches codex-lb (stacks/codex-lb.yaml) by name here.
   shared-services:
     external: true
-  # Gateway to the recognizer. Named to sort after iot. Not the IoT VLAN
-  # and not shared-services.
-  voice:
+  # Gateway to the recognizer. Not the IoT VLAN and not shared-services.
+  hear:
     driver: bridge
   iot:
     driver: ipvlan
