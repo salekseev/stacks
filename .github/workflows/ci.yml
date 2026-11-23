@@ -1,0 +1,77 @@
+# The one required status check on master: job `ci`.
+#
+# Runs on every pull request. `changes` looks at the changed paths and the
+# image workflows are called only for the images a pull request touches. A
+# pull request that touches none (most Renovate bumps) skips them all and `ci`
+# passes within seconds. `ci` fails when a called build fails or is cancelled.
+#
+# Adding an image workflow: give it `on: workflow_call`, add its paths to
+# `changes`, add a calling job, and list that job in `ci.needs`.
+name: ci
+
+on:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      nod: ${{ steps.paths.outputs.nod }}
+      v3rt3p: ${{ steps.paths.outputs.v3rt3p }}
+      codex-lb: ${{ steps.paths.outputs.codex-lb }}
+    steps:
+      - name: Which images does this pull request touch?
+        id: paths
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          files=$(gh api --paginate "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" --jq '.[].filename')
+          touched() {
+            if grep -qE "$2" <<<"$files"; then echo "$1=true"; else echo "$1=false"; fi | tee -a "$GITHUB_OUTPUT"
+          }
+          # ci.yml itself counts for every image: a change here can break any of them.
+          touched nod      '^(stacks/nod/|stacks/nod\.yaml$|\.github/workflows/(nod-images|ci)\.yml$)'
+          touched v3rt3p   '^(stacks/yandex-station/|stacks/yandex-station\.yaml$|\.github/workflows/(v3rt3p-images|ci)\.yml$)'
+          touched codex-lb '^(stacks/codex-lb/|\.github/workflows/(codex-lb-image|ci)\.yml$)'
+
+  nod:
+    needs: changes
+    if: needs.changes.outputs.nod == 'true'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/nod-images.yml
+
+  v3rt3p:
+    needs: changes
+    if: needs.changes.outputs.v3rt3p == 'true'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/v3rt3p-images.yml
+
+  codex-lb:
+    needs: changes
+    if: needs.changes.outputs.codex-lb == 'true'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/codex-lb-image.yml
+
+  ci:
+    needs: [changes, nod, v3rt3p, codex-lb]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail unless every job passed or was skipped
+        if: needs.changes.result != 'success' || contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1
