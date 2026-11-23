@@ -40,7 +40,7 @@ services:
     environment:
       GIGAAM_DEVICE: cpu
     networks:
-      - asr
+      - voice
     volumes:
       - /mnt/spool/apps/data/duowave/asr-cache:/cache
 
@@ -48,19 +48,16 @@ services:
     image: ghcr.io/duowaveai/duowave/gateway:0.18.3@sha256:0b896740410ae715f3585bd130b25a872e06be68869be5b371a2322c077398fe
     container_name: duowave-gateway
     restart: unless-stopped
-    # Docker connects equal-priority networks in alphabetical order and
-    # gives the default route to the first one. asr would win that race, and
-    # replies to the LAN would leave through the bridge instead of the IoT
-    # gateway, so the panel never answers. iot is connected first.
+    # Docker gives the default route to the first network in alphabetical
+    # order. priority is not applied by the Portainer deploy. The voice
+    # network is named so iot stays first; otherwise replies to the LAN leave
+    # through a bridge and the panel never answers.
     # shared-services is how this service reaches codex-lb.
     networks:
       iot:
         ipv4_address: 192.168.99.10
-        priority: 1000
-      shared-services:
-        priority: 100
-      asr:
-        priority: 100
+      shared-services: {}
+      voice: {}
     # The image runs as uid 1000. The secret file on the host is that uid,
     # mode 600, so the process can read it. Only OPENAI_API_KEY is copied out.
     entrypoint:
@@ -113,8 +110,9 @@ networks:
   # The gateway reaches codex-lb (stacks/codex-lb.yaml) by name here.
   shared-services:
     external: true
-  # Gateway to the recognizer. Not the IoT VLAN and not shared-services.
-  asr:
+  # Gateway to the recognizer. Named to sort after iot. Not the IoT VLAN
+  # and not shared-services.
+  voice:
     driver: bridge
   iot:
     driver: ipvlan
