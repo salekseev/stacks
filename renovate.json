@@ -109,6 +109,18 @@
         "major"
       ],
       "groupName": null
+    },
+    {
+      "description": "Automerge nod patch and minor releases once the image build passes; nod is 0.x and ships features in patch releases, so its minors are treated like patches. Major bumps wait for review",
+      "matchDatasources": ["github-releases"],
+      "matchPackageNames": ["n8n-io/nod"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true,
+      "labels": [
+        "dependencies",
+        "renovate",
+        "automerge"
+      ]
     }
   ],
   "labels": [

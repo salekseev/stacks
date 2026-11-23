@@ -356,8 +356,9 @@ every nod image has the same `X.Y.Z` tag, checks out `n8n-io/nod` at
 A Renovate regex custom manager in `renovate.json` reads the same tags and looks
 up `n8n-io/nod` GitHub releases, stripping the `nod-v` prefix. A bump is one pull
 request that changes the five tags; the pull-request build proves the release
-still builds. The existing grouping and automerge rules name only the `docker`
-and `github-tags` datasources, so Nod bumps are never automerged.
+still builds. Patch and minor bumps are automerged once that build passes; Nod
+is on 0.x and ships features in patch releases, so its minors are treated the
+same way. Major bumps wait for review.
 
 Why not keep the submodule: Renovate's submodule manager is opt-in beta and
 would move only the submodule, not the tags in the stack file, so every bump
@@ -367,9 +368,11 @@ Costs accepted:
 
 - A release tag is mutable where a commit SHA was not. A rebuild after upstream
   moves a tag would publish different code under the same image tag.
-- The bump pull request does not show upstream's compose changes. Compare
-  `deployment/` between the two tags before merging; the command is in the
-  header of `stacks/nod.yaml`.
+- The bump pull request does not show upstream's compose changes, and with
+  automerge nobody reads it first. A release that adds a required environment
+  variable, service or volume would deploy with the old stack file. Compare
+  `deployment/` between the two tags after a bump; the command is in the header
+  of `stacks/nod.yaml`.
 - The first pin under this scheme, `0.9.1`, is 32 commits older than the
   `1b42e68` pin it replaces. Those commits add three nullable columns and drop
   one index; nothing else in the schema changes.

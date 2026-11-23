@@ -9,8 +9,10 @@
 #   - images pulled from ghcr.io/salekseev/nod-* (built by
 #     .github/workflows/nod-images.yml from upstream release tag nod-v<tag>;
 #     the image tags below are the only pin and must all be the same version.
-#     Renovate bumps them from n8n-io/nod releases. Before merging a bump,
-#     compare upstream's compose and port any change here:
+#     Renovate bumps them from n8n-io/nod releases and automerges patch and
+#     minor bumps when the image build passes. Nothing checks that upstream's
+#     compose still matches this file, so after a bump compare the two and port
+#     any change here:
 #       gh api repos/n8n-io/nod/compare/nod-v<old>...nod-v<new> \
 #         --jq '.files[].filename' | grep -E '^deployment/|^Dockerfile')
 #   - docker-proxy.mjs baked into nod-runtime instead of bind-mounted
