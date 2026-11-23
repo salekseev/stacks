@@ -19,11 +19,9 @@ on:
       - stacks/yandex-station/**
       - stacks/yandex-station.yaml
       - .github/workflows/v3rt3p-images.yml
-  pull_request:
-    paths:
-      - stacks/yandex-station/**
-      - stacks/yandex-station.yaml
-      - .github/workflows/v3rt3p-images.yml
+  # Pull requests run this through .github/workflows/ci.yml, which decides
+  # from the changed paths whether to call it.
+  workflow_call:
   workflow_dispatch:
 
 concurrency:

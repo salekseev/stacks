@@ -14,10 +14,9 @@ on:
     paths:
       - stacks/codex-lb/**
       - .github/workflows/codex-lb-image.yml
-  pull_request:
-    paths:
-      - stacks/codex-lb/**
-      - .github/workflows/codex-lb-image.yml
+  # Pull requests run this through .github/workflows/ci.yml, which decides
+  # from the changed paths whether to call it.
+  workflow_call:
   workflow_dispatch:
 
 concurrency:
