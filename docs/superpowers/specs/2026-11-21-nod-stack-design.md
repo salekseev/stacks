@@ -376,3 +376,29 @@ Costs accepted:
 - The first pin under this scheme, `0.9.1`, is 32 commits older than the
   `1b42e68` pin it replaces. Those commits add three nullable columns and drop
   one index; nothing else in the schema changes.
+
+## 15. Chrome stable in nod-browser (2026-11-23)
+
+Follow-up (2) of section 12. `stacks/nod/browser.Dockerfile` is a stage
+`FROM browser` that installs `google-chrome-stable` from Google's signed apt
+repository and rewrites `chromium.sh` to exec it. `nod-images.yml` appends
+that stage to upstream's `Dockerfile.browser` for the browser build, so the
+image is otherwise upstream's. Nothing in Nod changes.
+
+Chrome is not pinned: Google's repository serves only the current stable, and
+the build cache keeps the layer until upstream's layers change, so Chrome moves
+with Nod releases. Debian's `chromium` stays installed and unused. The image
+tag stays the upstream version, so the master build overwrites
+`nod-browser:0.9.2`; Portainer has to re-pull it.
+
+**Verified locally** against `nod-v0.9.2`, with the compose hardening
+(`--read-only`, `--cap-drop ALL`, `no-new-privileges`, the two tmpfs mounts,
+`shm_size 512m`): Chrome 158.0.8127.36 installed; the worker opens
+`/data/control.sock`; agent-browser, called with Nod's flags (`--headed`,
+`--profile` on `/data`, `--executable-path` chromium.sh, Nod's `--args`
+including `--no-sandbox`; Nod's proxy left out), reports `engine: chrome`,
+loads `https://example.com`, and the page sees `navigator.webdriver=false`
+and `userAgentData.brands` including `Google Chrome 158`.
+
+**Not yet measured:** whether any site that matters behaves differently from
+stock Chromium (step (1) of section 12 was skipped).
