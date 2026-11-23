@@ -1,3 +1,4 @@
+# check=skip=InvalidDefaultArgInFrom
 # Docker-socket allowlist proxy for the nod stack (stacks/nod.yaml, service
 # `runtime`). Upstream bind-mounts docker-proxy.mjs from its checkout; Portainer
 # Git deploy cannot resolve that relative path, so it is baked in here.
