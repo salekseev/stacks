@@ -48,30 +48,20 @@ services:
     image: ghcr.io/duowaveai/duowave/gateway:0.18.3@sha256:0b896740410ae715f3585bd130b25a872e06be68869be5b371a2322c077398fe
     container_name: duowave-gateway
     restart: unless-stopped
-    # An ipvlan does not install its gateway as the default route once a
-    # bridge is attached, so replies to the LAN leave through the bridge and
-    # the panel never answers. The route is set here, then the process drops
-    # to the image user. shared-services is how this service reaches codex-lb.
-    user: "0:0"
-    cap_add:
-      - NET_ADMIN
+    # shared-services is how this service reaches codex-lb. The default
+    # route stays on a bridge: the IoT router does not answer 192.168.99.10,
+    # so forcing that gateway takes Yandex with it.
     networks:
       iot:
         ipv4_address: 192.168.99.10
       shared-services: {}
       hear: {}
-    # The route is set as root. The server then runs as uid 1000, which can
-    # read the secret file (mode 600). Only OPENAI_API_KEY is copied out.
+    # The image runs as uid 1000. The secret file on the host is that uid,
+    # mode 600, so the process can read it. Only OPENAI_API_KEY is copied out.
     entrypoint:
       - /bin/sh
       - -c
       - |
-        dev=$$(ip -o -4 addr show | awk '$$4 ~ /^192\.168\.99\.10\// {print $$2; exit}')
-        if [ -z "$$dev" ]; then
-          echo "IoT address 192.168.99.10 is not on an interface" >&2
-          exit 1
-        fi
-        ip route replace default via 192.168.99.1 dev "$$dev"
         key=$$(awk -F= '$$1=="OPENAI_API_KEY"{print substr($$0, index($$0,$$2)); exit}' /run/secrets/duowave_env)
         if [ -z "$$key" ]; then
           echo "OPENAI_API_KEY is missing from the DuoWave secret file" >&2
@@ -79,7 +69,7 @@ services:
         fi
         export LLM_API_KEY="$$key"
         unset key
-        exec su -s /bin/sh duowave -c 'exec duowave serve'
+        exec duowave serve
     secrets:
       - duowave_env
     environment:
