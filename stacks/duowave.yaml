@@ -48,14 +48,19 @@ services:
     image: ghcr.io/duowaveai/duowave/gateway:0.18.3@sha256:0b896740410ae715f3585bd130b25a872e06be68869be5b371a2322c077398fe
     container_name: duowave-gateway
     restart: unless-stopped
-    # iot is listed first so the default route is the IoT gateway (Yandex).
-    # shared-services is how this service reaches codex-lb. Listing any
-    # network drops the implicit default.
+    # Docker connects equal-priority networks in alphabetical order and
+    # gives the default route to the first one. asr would win that race, and
+    # replies to the LAN would leave through the bridge instead of the IoT
+    # gateway, so the panel never answers. iot is connected first.
+    # shared-services is how this service reaches codex-lb.
     networks:
       iot:
         ipv4_address: 192.168.99.10
-      shared-services: {}
-      asr: {}
+        priority: 1000
+      shared-services:
+        priority: 100
+      asr:
+        priority: 100
     # The image runs as uid 1000. The secret file on the host is that uid,
     # mode 600, so the process can read it. Only OPENAI_API_KEY is copied out.
     entrypoint:
