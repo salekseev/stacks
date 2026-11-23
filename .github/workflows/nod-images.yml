@@ -76,6 +76,18 @@ jobs:
           path: upstream
           persist-credentials: false
 
+      # runtime.Dockerfile builds on the image upstream runs its own `runtime`
+      # service on, so the base follows nod releases instead of being pinned here.
+      - name: Base image of upstream's runtime service
+        id: base
+        run: |
+          base=$(yq '.services.runtime.image' upstream/deployment/self-host/compose.yaml)
+          if ! [[ "$base" =~ ^node:[^@]+@sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::unexpected runtime image in upstream compose.yaml: ${base}"
+            exit 1
+          fi
+          echo "image=${base}" >> "$GITHUB_OUTPUT"
+
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Login to GHCR
@@ -91,6 +103,8 @@ jobs:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
           platforms: linux/amd64
+          # Only runtime.Dockerfile declares BASE; the other builds ignore it.
+          build-args: BASE=${{ steps.base.outputs.image }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
             ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}
