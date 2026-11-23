@@ -16,25 +16,25 @@
 # audio so Yandex hears the name. A fresh install would start in relay; this
 # file sets gateway mode so the routes above apply.
 #
-# The published gateway image has no local recognizer. Hearing is the asr
-# service: DuoWave's GigaAM server, built from stacks/duowave/asr (upstream
-# commit in UPSTREAM) and pulled from ghcr. This file has no build: key.
-# Portainer Git deploy builds whenever build: is present, and that build
-# cannot write inside the Portainer container. The recognizer is not published
-# on the host. The first start downloads GigaAM v3 into the cache (~450 MB)
-# before /health answers.
+# The published gateway image has no local recognizer. Hearing is DuoWave's
+# GigaAM image, pulled from ghcr. This file has no build: key. Portainer Git
+# deploy builds whenever build: is present, and that build cannot write
+# inside the Portainer container. The recognizer is not published on the host.
+# Weights stay in the cache. A new cache still has to fetch GigaAM v3
+# (~450 MB); that CDN certificate is expired, so a wiped cache will not
+# download until the certificate is renewed.
 #
 # LLM_API_KEY is taken at start from OPENAI_API_KEY in the existing host file,
 # mounted by the daemon. Portainer does not open that file. The data directory
 # must exist and be writable by uid 1000 before the first start:
 #   install -d -o 1000 -g 1000 /mnt/spool/apps/data/duowave
 #
-# Images: ghcr.io/duowaveai/duowave/gateway:0.18.1
-#         ghcr.io/salekseev/duowave-asr:1d35ba1
+# Images: ghcr.io/duowaveai/duowave/gateway:0.18.3
+#         ghcr.io/duowaveai/duowave/asr:0.18.3
 
 services:
   asr:
-    image: ghcr.io/salekseev/duowave-asr:1d35ba1
+    image: ghcr.io/duowaveai/duowave/asr:0.18.3@sha256:09510e2e2f30e6043652e77cea199b88ff43343295d35748e4ba84010774158b
     container_name: duowave-asr
     restart: unless-stopped
     environment:
@@ -45,7 +45,7 @@ services:
       - /mnt/spool/apps/data/duowave/asr-cache:/cache
 
   gateway:
-    image: ghcr.io/duowaveai/duowave/gateway:0.18.1@sha256:cacbc4af0fbb1166b27acfce568552ef685e9c6ebd138e1e8afee81b913a6a79
+    image: ghcr.io/duowaveai/duowave/gateway:0.18.3@sha256:0b896740410ae715f3585bd130b25a872e06be68869be5b371a2322c077398fe
     container_name: duowave-gateway
     restart: unless-stopped
     # iot is listed first so the default route is the IoT gateway (Yandex).
