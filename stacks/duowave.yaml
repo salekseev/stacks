@@ -34,7 +34,7 @@
 
 services:
   asr:
-    image: ghcr.io/duowaveai/duowave/asr:0.18.3@sha256:09510e2e2f30e6043652e77cea199b88ff43343295d35748e4ba84010774158b
+    image: ghcr.io/duowaveai/duowave/asr:0.18.6@sha256:f1fcf6f20caab6676000d6707c36ad1634d931678bbe6b3a4337e6b460fc594a
     container_name: duowave-asr
     restart: unless-stopped
     environment:
