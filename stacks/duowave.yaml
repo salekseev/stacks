@@ -45,7 +45,7 @@ services:
       - /mnt/spool/apps/data/duowave/asr-cache:/cache
 
   gateway:
-    image: ghcr.io/duowaveai/duowave/gateway:0.18.3@sha256:0b896740410ae715f3585bd130b25a872e06be68869be5b371a2322c077398fe
+    image: ghcr.io/duowaveai/duowave/gateway:0.18.6@sha256:bb3711fd64e16c945a89949b2868fdcdaa28576db9247b7df8aea9257e35b978
     container_name: duowave-gateway
     restart: unless-stopped
     # shared-services is how this service reaches codex-lb. The default
