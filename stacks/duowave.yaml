@@ -29,8 +29,8 @@
 # must exist and be writable by uid 1000 before the first start:
 #   install -d -o 1000 -g 1000 /mnt/spool/apps/data/duowave
 #
-# Images: ghcr.io/duowaveai/duowave/gateway:0.18.3
-#         ghcr.io/duowaveai/duowave/asr:0.18.3
+# Images: ghcr.io/duowaveai/duowave/gateway:0.19.1
+#         ghcr.io/duowaveai/duowave/asr:0.19.1
 
 services:
   asr:
