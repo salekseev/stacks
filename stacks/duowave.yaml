@@ -29,12 +29,12 @@
 # must exist and be writable by uid 1000 before the first start:
 #   install -d -o 1000 -g 1000 /mnt/spool/apps/data/duowave
 #
-# Images: ghcr.io/duowaveai/duowave/gateway:0.19.1
-#         ghcr.io/duowaveai/duowave/asr:0.19.1
+# Images: ghcr.io/duowaveai/duowave/gateway:0.19.2
+#         ghcr.io/duowaveai/duowave/asr:0.19.2
 
 services:
   asr:
-    image: ghcr.io/duowaveai/duowave/asr:0.19.1@sha256:ab42f8f194b4418b0542b809c604fb811011a7807f3bd3f9856ab0cf7f9108b2
+    image: ghcr.io/duowaveai/duowave/asr:0.19.2@sha256:5bc6b2d8b2aeefcbdeda63d225ca2800e252741d592adf93044117b05c6e8027
     container_name: duowave-asr
     restart: unless-stopped
     environment:
@@ -45,7 +45,7 @@ services:
       - /mnt/spool/apps/data/duowave/asr-cache:/cache
 
   gateway:
-    image: ghcr.io/duowaveai/duowave/gateway:0.19.1@sha256:c55ce6c566546c1d3454ed4a04e751dfec090c96baeba70b137cb661247b4abd
+    image: ghcr.io/duowaveai/duowave/gateway:0.19.2@sha256:c1d4ef389eff3fb2d6769cb208dc9246443df2c8c2f4dca9295e3e22eeb34834
     container_name: duowave-gateway
     restart: unless-stopped
     # shared-services is how this service reaches codex-lb. The default
