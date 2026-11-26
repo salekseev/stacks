@@ -34,7 +34,7 @@
 
 services:
   asr:
-    image: ghcr.io/duowaveai/duowave/asr:0.18.6@sha256:f1fcf6f20caab6676000d6707c36ad1634d931678bbe6b3a4337e6b460fc594a
+    image: ghcr.io/duowaveai/duowave/asr:0.19.1@sha256:ab42f8f194b4418b0542b809c604fb811011a7807f3bd3f9856ab0cf7f9108b2
     container_name: duowave-asr
     restart: unless-stopped
     environment:
@@ -45,7 +45,7 @@ services:
       - /mnt/spool/apps/data/duowave/asr-cache:/cache
 
   gateway:
-    image: ghcr.io/duowaveai/duowave/gateway:0.18.6@sha256:bb3711fd64e16c945a89949b2868fdcdaa28576db9247b7df8aea9257e35b978
+    image: ghcr.io/duowaveai/duowave/gateway:0.19.1@sha256:c55ce6c566546c1d3454ed4a04e751dfec090c96baeba70b137cb661247b4abd
     container_name: duowave-gateway
     restart: unless-stopped
     # shared-services is how this service reaches codex-lb. The default
