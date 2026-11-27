@@ -31,7 +31,7 @@
 services:
 
   cliproxyapi:
-    image: eceasy/cli-proxy-api:v8.1.7
+    image: eceasy/cli-proxy-api:v8.1.8
     container_name: cliproxyapi
     hostname: cliproxyapi
     user: "568:568"
@@ -68,7 +68,7 @@ services:
       - cpa-internal
 
   omc:
-    image: wiziscool/oh-my-cpa:v0.4.14
+    image: wiziscool/oh-my-cpa:0.4.16
     container_name: cliproxyapi-omc
     hostname: cliproxyapi-omc
     # Image default is 10001; it writes only OMCPA_DATA_DIR.
