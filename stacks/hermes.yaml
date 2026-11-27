@@ -4,17 +4,7 @@
 # See docs/superpowers/specs/2026-06-30-hermes-gateway-openwebui-port-design.md
 # Secrets split into two tiers:
 #   Portainer stack env vars (cross-container — must be set in Portainer UI):
-#     CAMOFOX_SHARED_KEY    - camofox REST bearer (shared between camofox and hermes-gateway)
 #     HERMES_API_SERVER_KEY - bearer for the gateway OpenAI API :8642 (== Open WebUI OPENAI_API_KEY); >=8 chars
-#     OCCAMY_OIDC_ISSUER        - CF Access Generic OIDC SaaS issuer for Occamy, exactly as its
-#                                 .well-known/openid-configuration names it (.../sso/oidc/<app-id>)
-#     OCCAMY_OIDC_CLIENT_ID     - that SaaS app's client id
-#     HERMES_BROWSER_USER       - Cloudflare Access user id (OIDC `sub`) allowed to open the browser;
-#                                 Occamy logs it when it refuses an unknown user
-#   (Not secrets — env vars only to keep them out of this public repo. Occamy refuses to start if
-#   HERMES_BROWSER_USER is empty: require_known_users then admits no one.)
-#   On-disk host file (secret; owner 65532, mode 0400):
-#     /mnt/spool/apps/config/hermes/occamy/oidc-client-secret - that SaaS app's client secret
 #   Hardcoded in compose (non-secret):
 #     HERMES_TUNNEL_ID = 0a0fe09f-7724-4e7e-9ad8-0326b70fa07f (Cloudflare tunnel UUID, inline below)
 #   /opt/data/.env on-disk (gateway-only secrets; written to /mnt/spool/apps/data/hermes/gateway/.env):
@@ -27,178 +17,6 @@
 # Nothing published to host; only cloudflared reaches origins, gated by one Cloudflare Access app.
 
 services:
-
-  camofox:
-    restart: unless-stopped
-    # jo-inc/camofox-browser — UPSTREAM (moved back off the redf0x1 fork 2026-09-03).
-    # The fork was adopted 2026-06-30 because jo-inc's published image shipped noVNC
-    # broken/absent, had no bind-host setting, and validated CAMOFOX_ACCESS_KEY while Hermes
-    # sends CAMOFOX_API_KEY. All three are fixed upstream (v1.13.0 added CAMOFOX_BIND_HOST,
-    # zombie-context recovery and IndexedDB persistence; lib/auth.js makes CAMOFOX_API_KEY the
-    # primary bearer; plugins/vnc apt deps are baked in by scripts/install-plugin-deps.sh, which
-    # installs every plugin's apt.txt regardless of its enabled flag).
-    #
-    # Why the move matters: jo-inc's VNC plugin runs a WATCHER that attaches x11vnc + noVNC to the
-    # SAME Xvfb display Camoufox renders on and reattaches after a browser relaunch. There is no
-    # toggle-display call, no "exactly one session" precondition and no tab invalidation — which is
-    # what made the redf0x1 login-handoff flaky and dropped the agent's tabs mid-task.
-    # See docs/superpowers/specs/2026-06-30-hermes-stealth-browser-stack-design.md.
-    image: ghcr.io/jo-inc/camofox-browser:1.19.0
-    container_name: camofox
-    hostname: camofox
-    # Login persistence depends on a GRACEFUL stop: the persistence plugin checkpoints storage state
-    # from gracefulShutdown() (server.js:7118-7150, on SIGTERM). The image CMD is
-    # `sh -c "node ..."`, and PID 1 is dash, which neither forwards SIGTERM nor dies from it — so
-    # every stop ran out Docker's 10 s grace, ended in SIGKILL, and saved nothing. Verified live
-    # 2026-11-11: the 2026-11-09 redeploy restored a 2026-10-23 snapshot, losing ~17 days of logins.
-    # Fix: tini as PID 1 (init) forwards SIGTERM to node, which is exec'd directly (the image's
-    # docker-entrypoint.sh ends in `exec "$@"`), and reaps Camoufox's orphaned children.
-    init: true
-    # --max-old-space-size inline: the image CMD defaults it to 128 (Dockerfile.ci:94). 128 MB OOMs
-    # the wrapper under load, which surfaces as 5xx from the REST API.
-    command: ["node", "--max-old-space-size=4096", "server.js"]
-    stop_grace_period: 60s               # room for browser close + storageState write (incl. IndexedDB)
-    configs:
-      # Replaces the image's /app/camofox.config.json verbatim except persistence.indexedDB: true.
-      # Login sites seen in the live profile (signin.ebay.com, devicebind.ebay.com, Hilton SSO) keep
-      # state in IndexedDB, which storageState() skips by default. Config-file-only — no env var.
-      - source: camofox
-        target: /app/camofox.config.json
-        mode: 0444
-    environment:
-      # --- server ---
-      - CAMOFOX_BIND_HOST=0.0.0.0        # jo-inc name; was CAMOFOX_HOST on the fork
-      - CAMOFOX_PORT=9377
-      # BOTH keys are required, and they are NOT redundant — they gate different routes:
-      #   CAMOFOX_ACCESS_KEY is the GLOBAL gate. accessKeyMiddleware (lib/auth.js:109-121) returns
-      #     next() immediately when it is unset, leaving every endpoint — navigate, evaluate
-      #     (arbitrary JS in a logged-in browser), cookie read — open to anything on hermes-net.
-      #     Verified live: without it, GET /tabs answered 200 with no Authorization header.
-      #   CAMOFOX_API_KEY only gates POST /sessions/:userId/cookies and /auth-sessions/*.
-      # Same value for both: Hermes sends the CAMOFOX_API_KEY value as its bearer, which the
-      # global gate then accepts.
-      - CAMOFOX_API_KEY=${CAMOFOX_SHARED_KEY}
-      - CAMOFOX_ACCESS_KEY=${CAMOFOX_SHARED_KEY}
-      # CAMOFOX_AUTH_MODE is NOT a jo-inc variable (fork-only) — dropped, not renamed. On jo-inc,
-      # "auth required" is expressed by setting CAMOFOX_ACCESS_KEY.
-      - CAMOFOX_PROFILE_DIR=/home/node/.camofox/profiles   # jo-inc name; was CAMOFOX_PROFILES_DIR
-      # --- interactive viewer: raw VNC, served to browsers by the occamy service below ---
-      # (noVNC was slow and Cloudflare browser-rendered VNC has no clipboard; both tried 2026-11-11.)
-      - ENABLE_VNC=1
-      # VNC_RFB_BIND and VNC_PASSWORD deliberately unset: x11vnc stays on 127.0.0.1:5900 with no
-      # password. occamy shares this container's network namespace (network_mode below) and is the
-      # only thing that can reach it; no other hermes-net container can.
-      # VNC_BIND deliberately unset: the watcher always starts websockify/noVNC, and unset keeps it on
-      # 127.0.0.1:6080, unreachable from cloudflared. noVNC is retired.
-      - VNC_RESOLUTION=1920x1080x24
-      # VIEW_ONLY must stay unset — the whole point is hands-on login.
-      # --- keep the browser, its Xvfb display and the operator session alive ---
-      # x11vnc only exists while Camoufox's Xvfb exists. Defaults tore it down: BROWSER_IDLE_TIMEOUT_MS
-      # (default 300000) closes the browser 5 min after the last session ends, leaving the viewer
-      # with nothing to attach to until the agent's next call. Human VNC input never counts as
-      # activity for these timers (only REST calls do), so they must not reap under a human login.
-      - BROWSER_IDLE_TIMEOUT_MS=0        # 0 disables idle browser shutdown (lib/config.js:117-119)
-      - SESSION_TIMEOUT_MS=0             # 0 disables session expiry (server.js:6068)
-      - TAB_INACTIVITY_MS=604800000      # 7 days; 0 is NOT "off" here (`|| 300000`, lib/config.js:149)
-      # With sessions no longer expiring, the expiry-time checkpoint is gone; camofox-checkpoint
-      # below exports (= persists) storage state every 10 minutes instead.
-      # No jo-inc equivalent for the fork's CAMOFOX_FAILURE_THRESHOLD: MAX_CONSECUTIVE_TIMEOUTS is a
-      # hardcoded 3 (server.js:505). Acceptable — jo-inc destroys only the offending TAB
-      # (destroyTab, server.js:1515-1518) instead of closing the whole browser context, so a
-      # bot-walled site no longer takes the logged-in profile down with it.
-      # newPageTimeoutMs (zombie-context recovery, v1.13.0) is config-file-only, not env — left at
-      # its default; needs a mounted camofox.config.json to change.
-      # Crash reporting left ENABLED for the trial week — it surfaces exactly the crash/hang data
-      # we are trying to characterise. Set CAMOFOX_CRASH_REPORT_ENABLED=false once the trial passes.
-    volumes:
-      - /mnt/spool/apps/data/hermes/camofox:/home/node/.camofox
-    # Docker's default /dev/shm is 64 MB; Firefox needs far more. jo-inc raised its own compose to
-    # 2 GB in v1.13.0 for browser stability — set it explicitly here rather than trusting the image.
-    shm_size: 2gb
-    # Insurance, NOT an allocation. Docker limits are caps; nothing here grants memory, and the
-    # container was previously unlimited. Baseline is ~1 GiB RSS with one tab open, so 8 GiB is pure
-    # headroom — it exists so a Firefox/wrapper leak kills and restarts THIS container instead of
-    # pressuring the host, which runs with zero swap (an exhaustion there goes straight to the OOM
-    # killer rather than degrading). Tradeoff accepted: if the cap is ever reached, the browser dies
-    # mid-task. Note this does NOT affect Hermes' memory-pressure banner — that reads host
-    # /proc/meminfo with no cgroup awareness (gateway/lifecycle_ledger.py:sample_memory), so it is
-    # driven by ZFS ARC size, not by this stack.
-    mem_limit: 8g
-    healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:9377/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
-    networks:
-      - hermes-net
-
-  camofox-checkpoint:
-    restart: unless-stopped
-    # Periodic login checkpoint. camofox persists storage state only on session close, cookie import,
-    # graceful shutdown, or an explicit export — never on a timer. With the operator session made
-    # permanent above, an OOM kill (mem_limit) or host crash would otherwise lose every login since
-    # the last start. GET /sessions/operator/storage_state emits session:storage:export, which the
-    # persistence plugin checkpoints to disk (plugins/persistence/index.js). 404 = no session yet.
-    # The route is registered by the VNC plugin, so this also depends on ENABLE_VNC=1.
-    # Also keeps one operator tab open. camofox starts the browser with no tab, and Camoufox draws
-    # no window without one, so after every restart the viewer was blank until the agent's next
-    # browser call. The tab uses Hermes' session key (visible-tab), so the agent adopts it.
-    image: curlimages/curl:8.23.0
-    container_name: camofox-checkpoint
-    depends_on:
-      camofox:
-        condition: service_healthy
-    environment:
-      - CAMOFOX_SHARED_KEY=${CAMOFOX_SHARED_KEY}
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        A="Authorization: Bearer $$CAMOFOX_SHARED_KEY"; U=http://camofox:9377; n=0
-        while :; do
-          case "$$(curl -fsS -H "$$A" "$$U/tabs?userId=operator")" in
-            *'"tabs":[]'*)
-              curl -fsS -o /dev/null -H "$$A" -H 'Content-Type: application/json' \
-                -d '{"userId":"operator","sessionKey":"visible-tab","url":"https://www.google.com/"}' \
-                "$$U/tabs" && echo "opened operator tab" ;;
-          esac
-          n=$$((n + 1))
-          if [ $$((n % 10)) -eq 0 ]; then
-            curl -fsS -o /dev/null -H "$$A" "$$U/sessions/operator/storage_state" \
-              || echo "checkpoint skipped (no operator session yet, or camofox unreachable)"
-          fi
-          sleep 60
-        done
-    networks:
-      - hermes-net
-
-  occamy:
-    restart: unless-stopped
-    # Web VNC client for hermes-browser.alekseev.us (changkun/occamy, a Go remote-desktop gateway).
-    # Chosen over noVNC for latency and native browser clipboard sync. Sign-in is OIDC against a
-    # Cloudflare Access SaaS app (same pattern as hermes-dashboard), behind the shared edge Access
-    # app as well. BETA (1.0.0-beta.x): API and protocol may change before 1.0.0.
-    # Runs in camofox's network namespace: it dials x11vnc on 127.0.0.1:5900, which needs no VNC
-    # password and is unreachable from the rest of hermes-net, and cloudflared reaches it as
-    # camofox:5636. Coupling: recreating camofox recreates occamy (and ends open viewer sessions).
-    # Spiked 2026-11-11: neighbour containers got connection refused on :5900; a session opened at
-    # 1920x1080 with `prompt: true` and no stored password.
-    # No healthcheck: the image has no shell or curl; GET /healthz exists for external probes.
-    image: ghcr.io/changkun/occamy:v1.0.0-beta.2
-    container_name: occamy
-    network_mode: service:camofox
-    depends_on:
-      camofox:
-        condition: service_healthy
-    configs:
-      - source: occamy
-        target: /occamy/conf.yaml
-    volumes:
-      # auth.signing_key_file lives here; losing it only signs everyone out. Named volume so it
-      # takes the image's uid 65532 without a host chown.
-      - occamy-data:/var/lib/occamy
-      # OIDC client secret; re-read at each sign-in, so it rotates without a restart.
-      - /mnt/spool/apps/config/hermes/occamy/oidc-client-secret:/run/secrets/occamy-oidc-client-secret:ro
 
   op-init:
     # One-shot init container: copies the op CLI binary from the official 1Password image
@@ -232,8 +50,6 @@ services:
     hostname: hermes-gateway
     command: gateway run
     depends_on:
-      camofox:
-        condition: service_healthy
       op-init:
         condition: service_completed_successfully
       dind:
@@ -259,12 +75,6 @@ services:
       #   HERMES_DASHBOARD_OIDC_ISSUER, HERMES_DASHBOARD_OIDC_CLIENT_ID, HERMES_DASHBOARD_OIDC_CLIENT_SECRET
       # NEVER set HERMES_DASHBOARD_INSECURE (no-op since June-2026 hardening; keep absent).
       # Do NOT set HERMES_DASHBOARD_OAUTH_CLIENT_ID (that selects the wrong `nous` provider).
-      # Route all browser tools server-side through the camofox sidecar (same vars as before).
-      - CAMOFOX_URL=http://camofox:9377
-      - CAMOFOX_API_KEY=${CAMOFOX_SHARED_KEY}
-      - CAMOFOX_USER_ID=operator
-      - CAMOFOX_SESSION_KEY=visible-tab
-      - CAMOFOX_ADOPT_EXISTING_TAB=true
       # ANTHROPIC_TOKEN is set in /opt/data/.env (not Portainer) — gateway-only secret.
       # Phase-2 Hindsight semantic memory — AUGMENTS (does not replace) built-in Markdown memory.
       # Reaches the self-hosted hindsight dataplane by container name over the shared-services net.
@@ -305,7 +115,7 @@ services:
     # + cua-driver) through this daemon and drives it with `docker exec`. Nothing here touches the
     # host's Docker. Tradeoff: dind must be privileged, so a sandbox escape is a dind-container
     # compromise; the unauthenticated tcp:2375 is root-equivalent, so it sits on dind-net, shared
-    # only with hermes-gateway. Not exposed to hermes-net (camofox, open-webui) or published.
+    # only with hermes-gateway. Not exposed to hermes-net (open-webui) or published.
     #
     # One-time setup, after first deploy (config.yaml lives in /mnt/spool/apps/data/hermes/gateway):
     #   docker exec hermes-gateway hermes config set terminal.backend docker
@@ -316,8 +126,8 @@ services:
     # The sandbox image is pinned like the gateway; bump both together. Sandbox state (/root,
     # /workspace, browser profile) lives in dind-data, not under /opt/data: bind sources resolve
     # on THIS daemon's filesystem.
-    # CAMOFOX_URL above still routes the agent's browser tools to camofox; Bot Screen's headed
-    # Chromium is used by computer_use. Unset CAMOFOX_URL to send browser tools there too.
+    # Camofox is gone (it left Hermes core in v0.23.x). browser_exec and computer_use both use
+    # Hermes' own headed Chromium in this sandbox, so a human can take over from Hermes Desktop.
     image: docker:29.10.1-dind
     container_name: hermes-dind
     hostname: dind
@@ -381,60 +191,16 @@ services:
     depends_on:
       - open-webui
       - hermes-gateway
-      - camofox
     networks:
       - hermes-net
 
 configs:
-  camofox:
-    content: |
-      {
-        "id": "camofox-browser",
-        "name": "Camofox Browser",
-        "version": "1.6.0",
-        "newPageTimeoutMs": 10000,
-        "interactive": { "mode": "off" },
-        "plugins": {
-          "youtube": { "enabled": true },
-          "persistence": { "enabled": true, "indexedDB": true },
-          "vnc": { "enabled": false, "resolution": "1920x1080" }
-        }
-      }
-  occamy:
-    # ${...} below is interpolated by Compose from Portainer stack env vars.
-    content: |
-      version: 1
-      listen: 0.0.0.0:5636
-      web_client: client/occamy-web/dist
-      auth:
-        signing_key_file: /var/lib/occamy/signing.key
-        access_token_lifetime: 12h
-        oidc:
-          issuer: "${OCCAMY_OIDC_ISSUER}"
-          client_id: "${OCCAMY_OIDC_CLIENT_ID}"
-          client_secret_file: /run/secrets/occamy-oidc-client-secret
-          redirect_url: https://hermes-browser.alekseev.us/api/v1/auth/oidc/callback
-          return_urls:
-            - https://hermes-browser.alekseev.us/static/
-          # `sub` (Cloudflare's per-account user id), not `email`: Occamy accepts `email` only with
-          # email_verified: true, which Cloudflare Access OIDC does not send. Verified live
-          # 2026-11-11: "the provider has not verified the email address". The sub changes if the
-          # user is removed and re-added to the Zero Trust org; update HERMES_BROWSER_USER then.
-          subject_claim: sub
-          require_known_users: true
-      connections:
-        - id: hermes-browser
-          name: Hermes browser
-          protocol: vnc
-          target: 127.0.0.1:5900       # camofox's loopback (shared network namespace)
-          credentials: {prompt: true}  # x11vnc asks for none; Occamy only prompts if a server does
-          allow: {users: ["${HERMES_BROWSER_USER}"]}
   cloudflared:
     content: |
       tunnel: 0a0fe09f-7724-4e7e-9ad8-0326b70fa07f
       credentials-file: /etc/cloudflared/creds/tunnel.json
       ingress:
-        # Origin-side Cloudflare Access JWT validation. hermes + hermes-browser share ONE Access app /
+        # Origin-side Cloudflare Access JWT validation. hermes uses the Access app /
         # audTag (team alekseev); cloudflared verifies Cf-Access-Jwt-Assertion against the team
         # JWKS + audTag before proxying.
         - hostname: hermes.alekseev.us
@@ -448,21 +214,11 @@ configs:
         - hostname: hermes-dashboard.alekseev.us
           service: http://hermes-gateway:9119
           # OIDC-only: the dashboard's own Cloudflare-Access-OIDC gate is the sole auth. No edge Access.
-          # (hermes + hermes-browser keep their edge `access:` blocks.)
-        - hostname: hermes-browser.alekseev.us
-          # Occamy web client (open /static/). Its WebSocket streams pass through cloudflared as-is.
-          service: http://camofox:5636   # occamy, inside camofox's network namespace
-          originRequest:
-            access:
-              required: true
-              teamName: alekseev
-              audTag:
-                - f79eba4208644c03e8777ab7870842bc46887458b09d3ad19e74570b119bc37d
+          # (hermes keeps its edge `access:` block.)
         - service: http_status:404
 
 volumes:
   op-bin:   # ephemeral bridge: populated by op-init, consumed by hermes-gateway
-  occamy-data:  # Occamy's signing key
   dind-data:    # dind's images and Bot Screen sandbox state
 
 networks:
