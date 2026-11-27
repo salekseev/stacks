@@ -1,0 +1,52 @@
+# $schema: https://raw.githubusercontent.com/compose-spec/compose-spec/refs/heads/main/schema/compose-spec.json
+#
+# Silverstone's identity on the Managed Nebula overlay (defined.net).
+# See docs/superpowers/specs/2026-11-27-nebula-overlay-access-design.md
+#
+# Host network mode: the overlay interface (dn-*) and silverstone's overlay
+# address live in the host's own namespace. A stack that should be reachable
+# from the overlay publishes a port bound to that address only, e.g.
+#   "[fdef:c0:c0:9189:b06a:11df:1076:327c]:8317:8317"   (stacks/cliproxyapi.yaml)
+#   "[fdef:c0:c0:9189:b06a:11df:1076:327c]:2455:2455"   (stacks/codex-lb.yaml)
+# Nebula's firewall (role "silverstone" in the defined.net UI) admits each port
+# only from hosts carrying that port's access:* tag; nothing else is open.
+# net.ipv6.ip_nonlocal_bind=1 (a TrueNAS sysctl tunable) lets those ports bind
+# before this container has created the interface, so start order is irrelevant.
+#
+# Host state (ZFS dataset spool/apps/config/nebula, root-owned, 0700):
+#   /mnt/spool/apps/config/nebula/dnclient/    -> /etc/defined (enrolled host config and keys)
+#   /mnt/spool/apps/config/nebula/nebula.env   0400 -> DN_ENROLLMENT_CODE. Read only while
+#     dnclient.yml is missing (first run). Single-use, 24 h; emptied after enrollment.
+#
+# Underlay addresses advertised to the lighthouse are limited by the docker:host
+# tag (allow eno1, ens1f0np0) so Docker bridges and tailscale0 are never used.
+
+services:
+
+  dnclient:
+    image: definednet/dnclient:1.0.1
+    container_name: nebula
+    network_mode: host
+    # Root is required: the image runs as root and creates the tun device.
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    # env_file: is resolved at compose-parse time, which fails inside Portainer.
+    # A Docker secret defers the path to the daemon (same as hindsight and nod).
+    # The image has no ENTRYPOINT; its CMD is /main.sh.
+    entrypoint:
+      - sh
+      - -c
+      - set -a; . /run/secrets/nebula_env; set +a; exec /main.sh
+    secrets:
+      - nebula_env
+    environment:
+      TZ: America/New_York
+    volumes:
+      - /mnt/spool/apps/config/nebula/dnclient:/etc/defined
+    restart: unless-stopped
+
+secrets:
+  nebula_env:
+    file: /mnt/spool/apps/config/nebula/nebula.env
