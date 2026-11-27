@@ -76,7 +76,7 @@ services:
       - HERMES_DASHBOARD=1
       - HERMES_DASHBOARD_HOST=0.0.0.0
       - HERMES_DASHBOARD_PORT=9119
-      - HERMES_DASHBOARD_PUBLIC_URL=https://hermes-dashboard.alekseev.us
+      - HERMES_DASHBOARD_PUBLIC_URL=https://hermes.alekseev.us
       # OIDC config lives in /opt/data/.env (gateway-only), provisioned on the host:
       #   HERMES_DASHBOARD_OIDC_ISSUER, HERMES_DASHBOARD_OIDC_CLIENT_ID, HERMES_DASHBOARD_OIDC_CLIENT_SECRET
       # NEVER set HERMES_DASHBOARD_INSECURE (no-op since June-2026 hardening; keep absent).
@@ -179,7 +179,7 @@ configs:
       tunnel: 0a0fe09f-7724-4e7e-9ad8-0326b70fa07f
       credentials-file: /etc/cloudflared/creds/tunnel.json
       ingress:
-        - hostname: hermes-dashboard.alekseev.us
+        - hostname: hermes.alekseev.us
           service: http://hermes-gateway:9119
           # OIDC-only: the dashboard's own Cloudflare-Access-OIDC gate is the sole auth. No edge Access.
         - service: http_status:404
