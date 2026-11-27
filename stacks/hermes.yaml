@@ -113,8 +113,15 @@ services:
     # That image is stacks/hermes-sandbox/Dockerfile: the upstream -desktop sandbox with Google Chrome
     # swapped in for Playwright's Chromium (CI publishes it; Hermes ignores browser.executable_path in
     # sandbox placement). It is pinned like the gateway; bump both together. Sandbox state (/root,
-    # /workspace, browser profile) lives in dind-data, not under /opt/data: bind sources resolve
-    # on THIS daemon's filesystem.
+    # /workspace, browser profile) lives in dind-data, not under /opt/data.
+    #
+    # Bind sources resolve on THIS daemon's filesystem, not the gateway's. Hermes bind-mounts
+    # /opt/data/skills, /opt/data/cache/*, browser_screenshots, images, attachments and composer-pastes
+    # into every sandbox, and a docker_volumes entry such as /opt/data/cache/documents:/output carries
+    # MEDIA output back. Without the mounts below those paths do not exist in dind, Docker creates them
+    # empty, and the sandbox sees no skills and its output never reaches the gateway. The same host
+    # paths are mounted here at the same /opt/data paths, only the directories Hermes names, not the
+    # whole data dir (which holds .env). If Hermes starts mounting another /opt/data directory, add it.
     # Camofox is gone (it left Hermes core in v0.23.x). browser_exec and computer_use both use
     # Hermes' own headed Chromium in this sandbox, so a human can take over from Hermes Desktop.
     image: docker:29.10.1-dind
@@ -125,6 +132,12 @@ services:
       - DOCKER_TLS_CERTDIR=            # empty = plain tcp://0.0.0.0:2375, only on dind-net
     volumes:
       - dind-data:/var/lib/docker
+      - /mnt/spool/apps/data/hermes/gateway/skills:/opt/data/skills:ro
+      - /mnt/spool/apps/data/hermes/gateway/cache:/opt/data/cache
+      - /mnt/spool/apps/data/hermes/gateway/browser_screenshots:/opt/data/browser_screenshots:ro
+      - /mnt/spool/apps/data/hermes/gateway/images:/opt/data/images:ro
+      - /mnt/spool/apps/data/hermes/gateway/attachments:/opt/data/attachments:ro
+      - /mnt/spool/apps/data/hermes/gateway/composer-pastes:/opt/data/composer-pastes:ro
     healthcheck:
       test: ["CMD", "docker", "info"]
       interval: 15s
