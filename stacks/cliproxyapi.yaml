@@ -1,0 +1,178 @@
+# $schema: https://raw.githubusercontent.com/compose-spec/compose-spec/refs/heads/main/schema/compose-spec.json
+#
+# Google AI Pro subscription pool: CLIProxyAPI (CPA) + Oh My CPA (OMC) dashboard.
+# See docs/superpowers/specs/2026-11-26-cliproxyapi-gateway-design.md
+#
+# TEST PHASE: two non-primary Google accounts via Antigravity OAuth. No consumer
+# stack is wired to this yet. Accepted risk: Google suspends Antigravity access
+# (403 ToS) for accounts used through third-party tools.
+#
+# Consumers (later) on the external shared-services network call
+#   http://cliproxyapi:8317/v1   (OpenAI-compatible; Bearer = a key in access.api-keys)
+#
+# Host state (ZFS datasets, apps 568:568 — back up BOTH together; OMC's DB is
+# unreadable without OMCPA_MASTER_KEY, and auths/ is the only copy of the logins):
+#   /mnt/spool/apps/config/cliproxyapi/cliproxyapi/  -> config.yaml (OMC edits it), auths/ (Google refresh tokens, plaintext, 0700)
+#   /mnt/spool/apps/config/cliproxyapi/cliproxyapi.env  0400 -> MANAGEMENT_PASSWORD
+#   /mnt/spool/apps/config/cliproxyapi/omc.env          0400 -> OMCPA_CPA_MANAGEMENT_KEY (same value), OMCPA_MASTER_KEY
+#   /mnt/spool/apps/config/cliproxyapi/cloudflared/  -> tunnel.json
+#   /mnt/spool/apps/data/cliproxyapi/cliproxyapi/    -> kv.db, logs/
+#   /mnt/spool/apps/data/cliproxyapi/omc/            -> OMC SQLite (encrypted with the master key)
+#
+# Nothing published to host; CPA's OAuth callback ports are never published.
+# OMC is reachable only through cloudflared (Cloudflare Access, origin JWT check),
+# then its own login (= the CPA management key). OMC is NOT on shared-services.
+# Accepted exposure: CPA serves /v1 and /v8/management on one port, and OMC needs
+# management.allow-remote, so the management API is reachable from shared-services,
+# guarded by the management key only.
+# Not deployed: oh-my-cpa-updater (mounts the Docker socket). Renovate updates.
+# Off by policy in OMC's UI: quota warmup, Agent, plugins.
+
+services:
+
+  cliproxyapi:
+    image: eceasy/cli-proxy-api:v8.1.7
+    container_name: cliproxyapi
+    hostname: cliproxyapi
+    user: "568:568"
+    # env_file: is resolved at compose-parse time, which fails inside Portainer.
+    # A Docker secret defers the path to the daemon (same as hindsight and nod).
+    # The image's own CMD is ./CLIProxyAPI with the config in its workdir; the
+    # config lives on the config dataset instead, because OMC writes it.
+    entrypoint:
+      - sh
+      - -c
+      - set -a; . /run/secrets/cliproxyapi_env; set +a; exec /CLIProxyAPI/CLIProxyAPI -config /etc/cliproxyapi/config.yaml
+    secrets:
+      - cliproxyapi_env
+    environment:
+      # The image bakes Asia/Shanghai.
+      TZ: America/New_York
+    volumes:
+      - /mnt/spool/apps/config/cliproxyapi/cliproxyapi:/etc/cliproxyapi
+      - /mnt/spool/apps/data/cliproxyapi/cliproxyapi:/var/lib/cliproxyapi
+      - /mnt/spool/apps/data/cliproxyapi/cliproxyapi/logs:/CLIProxyAPI/logs
+    expose:
+      - "8317"
+    healthcheck:
+      # Debian image without curl or wget: speak HTTP through bash's /dev/tcp.
+      # /healthz needs no key (same probe as OMC's compose.full.yml).
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8317 && printf 'GET /healthz HTTP/1.0\\r\\n\\r\\n' >&3 && head -n 1 <&3 | grep -q ' 200 '"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+    networks:
+      - shared-services
+      - cpa-internal
+
+  omc:
+    image: wiziscool/oh-my-cpa:v0.4.14
+    container_name: cliproxyapi-omc
+    hostname: cliproxyapi-omc
+    # Image default is 10001; it writes only OMCPA_DATA_DIR.
+    user: "568:568"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    entrypoint:
+      - sh
+      - -c
+      - set -a; . /run/secrets/omc_env; set +a; exec /usr/local/bin/oh-my-cpa
+    secrets:
+      - omc_env
+    environment:
+      TZ: America/New_York
+      OMCPA_DATA_DIR: /data
+      OMCPA_CPA_BASE_URL: http://cliproxyapi:8317
+      # https:// marks the session cookie Secure.
+      OMCPA_PUBLIC_URL: https://cpa.alekseev.us
+      # cloudflared's network; forwarded client IPs feed login throttling.
+      OMCPA_TRUSTED_PROXY_CIDRS: 172.31.255.240/29
+      # No updater is deployed; no background release/plugin checks.
+      OMCPA_UPDATER_ENABLED: "false"
+      OMCPA_UPDATE_CHECK_ENABLED: "false"
+      OMCPA_UPDATE_CHECK_ON_PAGE_LOAD: "false"
+    volumes:
+      - /mnt/spool/apps/data/cliproxyapi/omc:/data
+    healthcheck:
+      # The image's own probe: /api/healthz "ok" or "degraded" (CPA down) both
+      # pass; restarting OMC cannot fix CPA.
+      test: ["CMD", "sh", "/usr/local/bin/omc-healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 180s
+    depends_on:
+      cliproxyapi:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - cpa-internal
+      - cpa-edge
+
+  cloudflared:
+    image: cloudflare/cloudflared:2026.11.2
+    container_name: cliproxyapi-cloudflared
+    hostname: cliproxyapi-cloudflared
+    command: --config /etc/cloudflared/config.yml tunnel run
+    user: "568:568"
+    configs:
+      - source: cloudflared
+        target: /etc/cloudflared/config.yml
+        uid: "568"
+        gid: "568"
+        mode: 0440
+    volumes:
+      - /mnt/spool/apps/config/cliproxyapi/cloudflared:/etc/cloudflared/creds
+    depends_on:
+      omc:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - cpa-edge
+
+configs:
+  cloudflared:
+    content: |
+      tunnel: bca4152c-55eb-4b6c-9d33-572850780711
+      credentials-file: /etc/cloudflared/creds/tunnel.json
+      ingress:
+        # Origin-side Cloudflare Access JWT validation (same as codex-lb and hermes):
+        # cloudflared verifies Cf-Access-Jwt-Assertion against the team JWKS and
+        # this app's audTag before proxying.
+        - hostname: cpa.alekseev.us
+          service: http://omc:8080
+          originRequest:
+            access:
+              required: true
+              teamName: alekseev
+              audTag:
+                - 437844463d16ec588601e5d036100298a1736e3bab0ef568a471697ca4c50661
+        - service: http_status:404
+
+secrets:
+  cliproxyapi_env:
+    file: /mnt/spool/apps/config/cliproxyapi/cliproxyapi.env
+  omc_env:
+    file: /mnt/spool/apps/config/cliproxyapi/omc.env
+
+networks:
+  # Created out-of-band on the host: `docker network create shared-services`.
+  shared-services:
+    external: true
+  # CPA <-> OMC only, no egress.
+  cpa-internal:
+    internal: true
+    enable_ipv6: false
+  # cloudflared <-> OMC. Fixed IPv4 /29 because it IS OMC's trusted-proxy CIDR.
+  # IPv6 off: the daemon enables v6 on new bridges by default. Sits directly below
+  # codex-lb-edge (172.31.255.248/29) at the top of the daemon pool.
+  cpa-edge:
+    enable_ipv6: false
+    ipam:
+      config:
+        - subnet: 172.31.255.240/29
