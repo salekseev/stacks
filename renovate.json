@@ -33,6 +33,22 @@
     },
     {
       "customType": "regex",
+      "description": "the hermes gateway image is nousresearch/hermes-agent plus the 1Password CLI (stacks/hermes-gateway/Dockerfile), tagged <hermes tag>-op<op version>; track the hermes half so the tag in stacks/hermes.yaml moves in the same PR as the FROM line",
+      "managerFilePatterns": ["/^stacks/hermes\\.yaml$/"],
+      "matchStrings": ["ghcr\\.io/salekseev/hermes-gateway:(?<currentValue>v[0-9][0-9.]*)-op[0-9][0-9.]*"],
+      "depNameTemplate": "nousresearch/hermes-agent",
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "the op half of the hermes gateway tag, tracked against the 1password/op image that stacks/hermes-gateway/Dockerfile copies it from",
+      "managerFilePatterns": ["/^stacks/hermes\\.yaml$/"],
+      "matchStrings": ["ghcr\\.io/salekseev/hermes-gateway:v[0-9][0-9.]*-op(?<currentValue>[0-9][0-9.]*)"],
+      "depNameTemplate": "1password/op",
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
       "description": "nod image tags in stacks/nod.yaml are the upstream version; .github/workflows/nod-images.yml builds them from release tag nod-v<version>",
       "managerFilePatterns": ["/^stacks/nod\\.yaml$/"],
       "matchStrings": ["image: ghcr\\.io/salekseev/nod-[a-z]+:(?<currentValue>\\S+)"],
@@ -64,6 +80,12 @@
       "description": "our hermes-sandbox image is the upstream sandbox plus Chrome and is rebuilt by CI; upstream bumps arrive through the FROM line in stacks/hermes-sandbox/Dockerfile and the custom manager above, not docker tag lookups",
       "matchDatasources": ["docker"],
       "matchPackageNames": ["ghcr.io/salekseev/hermes-sandbox"],
+      "enabled": false
+    },
+    {
+      "description": "our hermes-gateway image is the upstream gateway plus the 1Password CLI and is rebuilt by CI; bumps arrive through the FROM / COPY --from lines in stacks/hermes-gateway/Dockerfile and the custom managers above, not docker tag lookups",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["ghcr.io/salekseev/hermes-gateway"],
       "enabled": false
     },
     {
@@ -142,6 +164,17 @@
         "dependencies",
         "renovate",
         "automerge"
+      ]
+    },
+    {
+      "description": "The hermes gateway, its sandbox and the op CLI baked into the gateway move together: one reviewed PR updates both Dockerfiles and the tags in stacks/hermes.yaml, never automerged. Placed after the patch/minor/major rules so it wins",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["nousresearch/hermes-agent", "nousresearch/hermes-sandbox", "1password/op"],
+      "groupName": "hermes",
+      "automerge": false,
+      "labels": [
+        "dependencies",
+        "renovate"
       ]
     },
     {

@@ -29,56 +29,21 @@
 
 services:
 
-  op-init:
-    # One-shot init container: copies the op CLI binary from the official 1Password image
-    # into the op-bin named volume, which hermes-gateway mounts at /usr/local/sbin.
-    # Runs once at stack start and exits 0; hermes-gateway waits on service_completed_successfully.
-    # user: root required — 1password/op runs as opuser by default, which cannot write to the
-    # root-owned Docker named volume on first creation.
-    # Copy-then-rename, not a plain cp: hermes-gateway runs a long-lived `op daemon` from this
-    # volume, and overwriting a running binary fails with "Text file busy" (exit 1). That happens
-    # whenever op-init reruns while a gateway is still up, e.g. on a redeploy, and blocks the
-    # gateway's start. A rename is atomic, and the running daemon keeps the old inode.
-    # Reproduced and verified live 2026-11-11.
-    #
-    # `op` is installed as op.real behind a wrapper that sets TMPDIR=/tmp. Hermes v0.23 points
-    # TMPDIR at /opt/data/cache/scratch, which is ZFS with NFSv4 ACLs (aclinherit=passthrough), so
-    # every file created there is mode 770. op writes a session file into TMPDIR and refuses it
-    # unless it is 600 ("permissions are too broad"), so every op read failed and the
-    # secrets.onepassword source resolved nothing. Verified live 2026-11-26: TMPDIR=/opt/data/cache/
-    # scratch fails, TMPDIR=/tmp works. /tmp is the container's own filesystem, so modes are exact.
-    # Hermes calls binary_path (/opt/op-bin/op), so the wrapper is what it runs.
-    image: 1password/op:2.42.0
-    container_name: hermes-op-init
-    restart: "no"
-    user: root
-    entrypoint:
-      - sh
-      - -c
-      - |
-        set -e
-        cp /usr/local/bin/op /op-bin/op.real.new
-        mv -f /op-bin/op.real.new /op-bin/op.real
-        printf '%s\n' '#!/bin/sh' 'export TMPDIR=/tmp' 'exec /opt/op-bin/op.real "$$@"' > /op-bin/op.new
-        chmod 755 /op-bin/op.new
-        mv -f /op-bin/op.new /op-bin/op
-    volumes:
-      - op-bin:/op-bin
-
   hermes-gateway:
     restart: unless-stopped
     # First-party agent daemon. `gateway run` serves (HERMES_DASHBOARD=1) the dashboard on :9119 as a co-resident s6-rc service. s6 supervises
     # both, so a mis-start restarts in-container (no Docker crash-loop).
-    # Slim tag: Bot Screen runs in the docker sandbox (dind below), not in this container, so the
+    # stacks/hermes-gateway/Dockerfile: nousresearch/hermes-agent plus the 1Password CLI, published
+    # by CI as <hermes tag>-op<op version>. Hermes resolves op:// references in this process and never
+    # installs op itself. op needs mode-600 session files in TMPDIR: see stacks/AGENTS.md.
+    # Slim base tag: Bot Screen runs in the docker sandbox (dind below), not in this container, so the
     # -desktop packages (~930 MB) are not needed here. Upstream moved from calver (v2026.9.24) to
     # semver (v0.23.x); the docker image still ships the docker CLI (verified 2026-11-26).
-    image: nousresearch/hermes-agent:v0.23.4
+    image: ghcr.io/salekseev/hermes-gateway:v0.23.4-op2.42.0
     container_name: hermes-gateway
     hostname: hermes-gateway
     command: gateway run
     depends_on:
-      op-init:
-        condition: service_completed_successfully
       dind:
         condition: service_healthy
     environment:
@@ -114,12 +79,8 @@ services:
       # and wedges retain. This is the Nous image's intended setting. NEVER upgrade the
       # client: any version other than 0.6.1 triggers a reinstall attempt that fails.
       - HERMES_DISABLE_LAZY_INSTALLS=1
-      # Prepend /opt/op-bin so the op CLI (mounted from op-init) is on PATH for uid 1000.
-      # Cannot mount into /usr/local/bin (overlays node/uv/uvx) or /usr/local/sbin (root-only sbin).
-      - PATH=/opt/op-bin:/opt/hermes/bin:/opt/hermes/.venv/bin:/opt/data/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     volumes:
       - /mnt/spool/apps/data/hermes/gateway:/opt/data
-      - op-bin:/opt/op-bin:ro   # op binary from op-init
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:9119/api/status',timeout=5).status==200 else 1)"]
       interval: 30s
@@ -210,7 +171,6 @@ configs:
         - service: http_status:404
 
 volumes:
-  op-bin:   # ephemeral bridge: populated by op-init, consumed by hermes-gateway
   dind-data:    # dind's images and Bot Screen sandbox state
 
 networks:
