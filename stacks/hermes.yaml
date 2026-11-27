@@ -1,10 +1,8 @@
 # $schema: https://raw.githubusercontent.com/compose-spec/compose-spec/refs/heads/main/schema/compose-spec.json
 #
-# Hermes agent stack — first-party gateway + Open WebUI + dashboard.
+# Hermes agent stack — first-party gateway + dashboard.
 # See docs/superpowers/specs/2026-06-30-hermes-gateway-openwebui-port-design.md
 # Secrets split into two tiers:
-#   Portainer stack env vars (cross-container — must be set in Portainer UI):
-#     HERMES_API_SERVER_KEY - bearer for the gateway OpenAI API :8642 (== Open WebUI OPENAI_API_KEY); >=8 chars
 #   Hardcoded in compose (non-secret):
 #     HERMES_TUNNEL_ID = 0a0fe09f-7724-4e7e-9ad8-0326b70fa07f (Cloudflare tunnel UUID, inline below)
 #   /opt/data/.env on-disk (gateway-only secrets; written to /mnt/spool/apps/data/hermes/gateway/.env):
@@ -14,6 +12,19 @@
 #     HERMES_DASHBOARD_OIDC_CLIENT_SECRET - CF Access SaaS-OIDC client secret
 #     HINDSIGHT_API_KEY                 - Hindsight tenant key (== server HINDSIGHT_API_TENANT_API_KEY)
 #     OP_SERVICE_ACCOUNT_TOKEN          - 1Password service account (scoped read-only to hermes vault)
+#     CODEX_LB_API_KEY                  - this stack's codex-lb API key (see "Model gateways" below)
+#     CLIPROXYAPI_API_KEY               - a key from cliproxyapi's access.api-keys
+# Model gateways: the gateway process (not the dind sandbox) makes the model calls, and it is on
+# shared-services, so codex-lb and cliproxyapi resolve by name with no compose change. Add them once
+# in /opt/data/config.yaml; key_env points at the /opt/data/.env entries above:
+#   custom_providers:
+#     - name: codex-lb
+#       base_url: http://codex-lb:2455/v1
+#       key_env: CODEX_LB_API_KEY
+#     - name: cliproxyapi
+#       base_url: http://cliproxyapi:8317/v1
+#       key_env: CLIPROXYAPI_API_KEY
+# then pick one with `hermes model` (or `/model`). Model names come from each gateway's /v1/models.
 # Nothing published to host; only cloudflared reaches origins, gated by one Cloudflare Access app.
 
 services:
@@ -39,8 +50,7 @@ services:
 
   hermes-gateway:
     restart: unless-stopped
-    # First-party agent daemon. `gateway run` serves the OpenAI-compatible API on :8642 and
-    # (HERMES_DASHBOARD=1) the dashboard on :9119 as a co-resident s6-rc service. s6 supervises
+    # First-party agent daemon. `gateway run` serves (HERMES_DASHBOARD=1) the dashboard on :9119 as a co-resident s6-rc service. s6 supervises
     # both, so a mis-start restarts in-container (no Docker crash-loop).
     # Slim tag: Bot Screen runs in the docker sandbox (dind below), not in this container, so the
     # -desktop packages (~930 MB) are not needed here. Upstream moved from calver (v2026.9.24) to
@@ -61,10 +71,6 @@ services:
       # /opt/data (HERMES_HOME) is chowned to this uid/gid by the image's s6 init.
       - HERMES_UID=1000
       - HERMES_GID=1000
-      # OpenAI-compatible API server (consumed by Open WebUI)
-      - API_SERVER_ENABLED=true
-      - API_SERVER_HOST=0.0.0.0
-      - API_SERVER_KEY=${HERMES_API_SERVER_KEY}
       # First-party dashboard — fail-closed on a non-loopback bind. Auth = native OIDC (self_hosted
       # provider) against Cloudflare Access as a Generic OIDC SaaS IdP. No basic-auth, no edge Access.
       - HERMES_DASHBOARD=1
@@ -115,15 +121,17 @@ services:
     # + cua-driver) through this daemon and drives it with `docker exec`. Nothing here touches the
     # host's Docker. Tradeoff: dind must be privileged, so a sandbox escape is a dind-container
     # compromise; the unauthenticated tcp:2375 is root-equivalent, so it sits on dind-net, shared
-    # only with hermes-gateway. Not exposed to hermes-net (open-webui) or published.
+    # only with hermes-gateway. Not exposed to hermes-net or published.
     #
     # One-time setup, after first deploy (config.yaml lives in /mnt/spool/apps/data/hermes/gateway):
     #   docker exec hermes-gateway hermes config set terminal.backend docker
-    #   docker exec hermes-gateway hermes config set terminal.docker_image nousresearch/hermes-sandbox:v0.23.4-desktop
+    #   docker exec hermes-gateway hermes config set terminal.docker_image ghcr.io/salekseev/hermes-sandbox:v0.23.4-desktop-chrome
     #   docker exec hermes-gateway hermes config set bot_desktop.placement terminal
     #   docker exec hermes-gateway hermes config set browser.headed true
     #   docker exec hermes-gateway hermes computer-use screen status
-    # The sandbox image is pinned like the gateway; bump both together. Sandbox state (/root,
+    # That image is stacks/hermes-sandbox/Dockerfile: the upstream -desktop sandbox with Google Chrome
+    # swapped in for Playwright's Chromium (CI publishes it; Hermes ignores browser.executable_path in
+    # sandbox placement). It is pinned like the gateway; bump both together. Sandbox state (/root,
     # /workspace, browser profile) lives in dind-data, not under /opt/data: bind sources resolve
     # on THIS daemon's filesystem.
     # Camofox is gone (it left Hermes core in v0.23.x). browser_exec and computer_use both use
@@ -145,34 +153,6 @@ services:
     networks:
       - dind-net
 
-  open-webui:
-    restart: unless-stopped
-    # Daily chat client -> gateway /v1. No published ports: trusted-header SSO is only safe
-    # because nothing but cloudflared can reach :8080 to forge Cf-Access-Authenticated-User-Email.
-    image: ghcr.io/open-webui/open-webui:v0.13.4
-    container_name: open-webui
-    hostname: open-webui
-    depends_on:
-      hermes-gateway:
-        condition: service_healthy
-    environment:
-      - ENABLE_OPENAI_API=true
-      - OPENAI_API_BASE_URL=http://hermes-gateway:8642/v1
-      - OPENAI_API_KEY=${HERMES_API_SERVER_KEY}
-      - ENABLE_OLLAMA_API=false
-      - WEBUI_AUTH=true
-      - ENABLE_SIGNUP=false
-      - ENABLE_LOGIN_FORM=false
-      - WEBUI_AUTH_TRUSTED_EMAIL_HEADER=Cf-Access-Authenticated-User-Email
-      - WEBUI_AUTH_TRUSTED_NAME_HEADER=Cf-Access-Authenticated-User-Email
-      - WEBUI_URL=https://hermes.alekseev.us
-      - ENABLE_WEBSOCKET_SUPPORT=true
-      - CORS_ALLOW_ORIGIN=https://hermes.alekseev.us
-    volumes:
-      - /mnt/spool/apps/data/hermes/open-webui:/app/backend/data
-    networks:
-      - hermes-net
-
   cloudflared:
     restart: unless-stopped
     image: cloudflare/cloudflared:2026.11.2
@@ -189,7 +169,6 @@ services:
     volumes:
       - /mnt/spool/apps/config/hermes/cloudflared:/etc/cloudflared/creds
     depends_on:
-      - open-webui
       - hermes-gateway
     networks:
       - hermes-net
@@ -200,21 +179,9 @@ configs:
       tunnel: 0a0fe09f-7724-4e7e-9ad8-0326b70fa07f
       credentials-file: /etc/cloudflared/creds/tunnel.json
       ingress:
-        # Origin-side Cloudflare Access JWT validation. hermes uses the Access app /
-        # audTag (team alekseev); cloudflared verifies Cf-Access-Jwt-Assertion against the team
-        # JWKS + audTag before proxying.
-        - hostname: hermes.alekseev.us
-          service: http://open-webui:8080
-          originRequest:
-            access:
-              required: true
-              teamName: alekseev
-              audTag:
-                - f79eba4208644c03e8777ab7870842bc46887458b09d3ad19e74570b119bc37d
         - hostname: hermes-dashboard.alekseev.us
           service: http://hermes-gateway:9119
           # OIDC-only: the dashboard's own Cloudflare-Access-OIDC gate is the sole auth. No edge Access.
-          # (hermes keeps its edge `access:` block.)
         - service: http_status:404
 
 volumes:
