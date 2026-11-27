@@ -17,6 +17,9 @@
 #   /mnt/spool/apps/config/nebula/dnclient/    -> /etc/defined (enrolled host config and keys)
 #   /mnt/spool/apps/config/nebula/nebula.env   0400 -> DN_ENROLLMENT_CODE. Read only while
 #     dnclient.yml is missing (first run). Single-use, 24 h; emptied after enrollment.
+#     Empty it, never delete it: the secret mount needs the file. A failed
+#     enrollment (used or expired code) restart-loops: stop the stack, write a
+#     fresh code, start it.
 #
 # Underlay addresses advertised to the lighthouse are limited by the docker:host
 # tag (allow eno1, ens1f0np0) so Docker bridges and tailscale0 are never used.
@@ -27,9 +30,15 @@ services:
     image: definednet/dnclient:1.0.1
     container_name: nebula
     network_mode: host
-    # Root is required: the image runs as root and creates the tun device.
+    # Root (no user:): NET_ADMIN only takes effect for uid 0. The tun device
+    # comes from devices:. Everything else Docker grants by default is dropped
+    # (NET_RAW in the host namespace could sniff host interfaces).
+    cap_drop:
+      - ALL
     cap_add:
       - NET_ADMIN
+    security_opt:
+      - no-new-privileges:true
     devices:
       - /dev/net/tun:/dev/net/tun
     # env_file: is resolved at compose-parse time, which fails inside Portainer.

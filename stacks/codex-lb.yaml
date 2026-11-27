@@ -59,6 +59,10 @@ services:
     ports:
       # Overlay address only (stacks/nebula.yaml). Nebula's firewall admits
       # machines tagged access:codex-lb. Never publish 1455 (OAuth callback).
+      # Relies on IPv6 on shared-services: the DNAT then keeps the client's
+      # overlay source address, outside CODEX_LB_FIREWALL_TRUSTED_PROXY_CIDRS.
+      # Without it, docker-proxy would connect from a bridge gateway address,
+      # possibly inside that CIDR, and forged Access headers would be trusted.
       - "[fdef:c0:c0:9189:b06a:11df:1076:327c]:2455:2455"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:2455/health/ready')"]

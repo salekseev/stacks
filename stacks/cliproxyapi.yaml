@@ -7,7 +7,7 @@
 # stack is wired to this yet. Accepted risk: Google suspends Antigravity access
 # (403 ToS) for accounts used through third-party tools.
 #
-# Consumers on the external shared-services network call
+# Consumers (later) on the external shared-services network call
 #   http://cliproxyapi:8317/v1   (OpenAI-compatible; Bearer = a key in access.api-keys)
 # Machines on the Nebula overlay tagged access:cpa call
 #   http://[fdef:c0:c0:9189:b06a:11df:1076:327c]:8317     (Claude Code: ANTHROPIC_BASE_URL; one key per machine)
