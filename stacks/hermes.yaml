@@ -179,9 +179,17 @@ configs:
       tunnel: 0a0fe09f-7724-4e7e-9ad8-0326b70fa07f
       credentials-file: /etc/cloudflared/creds/tunnel.json
       ingress:
+        # Origin-side Cloudflare Access JWT validation: cloudflared verifies Cf-Access-Jwt-Assertion
+        # against the team JWKS + audTag before proxying. The dashboard's own Cloudflare-Access-OIDC
+        # login still follows, so this is a second gate, not a replacement.
         - hostname: hermes.alekseev.us
           service: http://hermes-gateway:9119
-          # OIDC-only: the dashboard's own Cloudflare-Access-OIDC gate is the sole auth. No edge Access.
+          originRequest:
+            access:
+              required: true
+              teamName: alekseev
+              audTag:
+                - ffb55fe21ca0c33020520855c8db66978f126b200df58234505fb6554038c14c
         - service: http_status:404
 
 volumes:
