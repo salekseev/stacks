@@ -139,23 +139,30 @@ uses `/home/pn/.hermes/bot-desktop/browser-profile` inside the sandbox. That is 
 filesystem, which Hermes may remove (orphan reaper) and which does not survive a new container. So the host
 directory is bind-mounted over that exact path:
 
-1. `stacks/hermes.yaml` mounts `gateway/browser-profile` and `gateway/sandboxes` into `hermes-dind` at
+1. `stacks/hermes.yaml` mounts `gateway/bot-browser-profile` and `gateway/sandboxes` into `hermes-dind` at
    the same `/opt/data/...` paths (bind sources resolve on dind, see the section above).
 2. Create the host directory once, owned by the gateway user (uid 1000, the sandbox's `pn`):
-   `mkdir -p /mnt/spool/apps/data/hermes/gateway/browser-profile`
+   `mkdir -p /mnt/spool/apps/data/hermes/gateway/bot-browser-profile`
 3. Add the mount to the sandbox (merge into the existing list; a second `docker_volumes:` key silently
    overrides the first):
 
    ```sh
    docker exec -u 1000:1000 -e HERMES_HOME=/opt/data hermes-gateway hermes config set terminal.docker_volumes \
-     '["/opt/data/cache/documents:/output","/opt/data/browser-profile:/home/pn/.hermes/bot-desktop/browser-profile"]'
+     '["/opt/data/cache/documents:/output","/opt/data/bot-browser-profile:/home/pn/.hermes/bot-desktop/browser-profile"]'
    ```
 
    Changing `docker_volumes` changes the container's environment label, so Hermes creates a fresh sandbox
    that has the mount.
 
+**Do not name the host directory `browser-profile`.** `$HERMES_HOME/browser-profile` (that is `/opt/data/browser-profile`)
+is Hermes' own real-profile snapshot store. `cleanup_real_profile_snapshots()` (`hermes_cli/browser_connect.py`)
+does `shutil.rmtree` on it whenever a browser session is created with `browser.use_real_profile` off, which is
+the default. The first version of this setup used that name; the bot's next `browser_exec` deleted the
+directory, the sandbox's bind mount was left pointing at a deleted inode, and Chrome could not start. Use
+`bot-browser-profile`, and keep anything you want to survive out of `$HERMES_HOME/browser-profile`.
+
 **Verify.** `docker exec hermes-dind docker exec -u pn <sandbox> sh -c 'mount | grep browser-profile'`
-shows the bind, and `ls /mnt/spool/apps/data/hermes/gateway/browser-profile` on the host fills with Chrome's
+shows the bind, and `ls /mnt/spool/apps/data/hermes/gateway/bot-browser-profile` on the host fills with Chrome's
 profile files once the browser has run. Cookies then survive `docker rm` of the sandbox and a dind recreate.
 
 **Do not** copy `cf_clearance` from a *different* browser's profile (Camofox's Firefox, for example).
