@@ -161,7 +161,9 @@ configs:
           service: http://hermes-gateway:9119
           # OIDC-only: the dashboard's own Cloudflare-Access-OIDC gate is the sole auth. No edge Access
           # and no origin-side JWT check (a self-hosted Access app with audTag was tried 2026-11-26 and
-          # removed; re-add `originRequest.access` with its audTag to bring it back).
+          # removed; re-add `originRequest.access` with its audTag to bring it back). Do not combine
+          # `access.required` with a Bypass policy: a bypassed request carries no JWT, so cloudflared
+          # answers 403.
         - service: http_status:404
 
 volumes:
