@@ -107,7 +107,7 @@ configs:
 
 networks:
   # Created out-of-band on the host: `docker network create shared-services`.
-  # Consumers (hindsight, yandex-station processor) reach codex-lb by name here.
+  # Consumers (hindsight, duowave) reach codex-lb by name here.
   shared-services:
     external: true
   # cloudflared <-> codex-lb only. Fixed IPv4 /29 because it IS the trusted-proxy

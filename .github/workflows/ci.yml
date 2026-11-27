@@ -26,7 +26,6 @@ jobs:
       pull-requests: read
     outputs:
       nod: ${{ steps.paths.outputs.nod }}
-      v3rt3p: ${{ steps.paths.outputs.v3rt3p }}
       codex-lb: ${{ steps.paths.outputs.codex-lb }}
       hermes-sandbox: ${{ steps.paths.outputs.hermes-sandbox }}
     steps:
@@ -41,7 +40,6 @@ jobs:
           }
           # ci.yml itself counts for every image: a change here can break any of them.
           touched nod      '^(stacks/nod/|stacks/nod\.yaml$|\.github/workflows/(nod-images|ci)\.yml$)'
-          touched v3rt3p   '^(stacks/yandex-station/|stacks/yandex-station\.yaml$|\.github/workflows/(v3rt3p-images|ci)\.yml$)'
           touched codex-lb '^(stacks/codex-lb/|stacks/codex-lb\.yaml$|\.github/workflows/(codex-lb-image|ci)\.yml$)'
           touched hermes-sandbox '^(stacks/hermes-sandbox/|stacks/hermes\.yaml$|\.github/workflows/(hermes-sandbox-image|ci)\.yml$)'
 
@@ -52,14 +50,6 @@ jobs:
       contents: read
       packages: write
     uses: ./.github/workflows/nod-images.yml
-
-  v3rt3p:
-    needs: changes
-    if: needs.changes.outputs.v3rt3p == 'true'
-    permissions:
-      contents: read
-      packages: write
-    uses: ./.github/workflows/v3rt3p-images.yml
 
   codex-lb:
     needs: changes
@@ -78,7 +68,7 @@ jobs:
     uses: ./.github/workflows/hermes-sandbox-image.yml
 
   ci:
-    needs: [changes, nod, v3rt3p, codex-lb, hermes-sandbox]
+    needs: [changes, nod, codex-lb, hermes-sandbox]
     if: always()
     runs-on: ubuntu-latest
     steps:
