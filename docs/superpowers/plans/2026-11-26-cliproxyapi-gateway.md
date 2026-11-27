@@ -351,7 +351,8 @@ services:
     volumes:
       - /mnt/spool/apps/data/cliproxyapi/omc:/data
     healthcheck:
-      # The image's own probe: /api/healthz reports ok, or degraded when CPA is down.
+      # The image's own probe: /api/healthz "ok" or "degraded" (CPA down) both
+      # pass; restarting OMC cannot fix CPA.
       test: ["CMD", "sh", "/usr/local/bin/omc-healthcheck"]
       interval: 30s
       timeout: 5s
