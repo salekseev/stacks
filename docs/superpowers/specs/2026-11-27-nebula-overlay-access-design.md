@@ -159,3 +159,22 @@ Remove the `ports:` entries and redeploy `cliproxyapi` and `codex-lb`; stop the 
 
 - A name for the overlay address (`/etc/hosts` on clients, or overlay DNS).
 - nod over Nebula (its 2026-11-21 spec defers it).
+
+## 11. Changes after deployment (2026-11-27)
+
+Deployed from PR #243. Where this section differs from §1–§10, it wins. The full as-built record follows after the plan's Task 8.
+
+**codex-lb deferred (supersedes §4.4 and the codex-lb parts of §3, §5, §7).** Over the overlay, 2455 returned "connection refused". codex-lb's image entrypoint runs `python -m app.cli --host 0.0.0.0 --port 2455`: the socket is IPv4 only (`/proc/net/tcp6` has no 2455 listener). Docker DNATs the IPv6 overlay address to the container's IPv6 `shared-services` address, where nothing listens. CPA (Go) listens dual-stack and works. Options considered:
+- **A. `--host ::`** through the patched image's Dockerfile. codex-lb's trusted-proxy check (`app/core/auth/dashboard_mode.py`, `dependencies.py`) compares `ip_address(source)` with IPv4 CIDRs and has no IPv4-mapped handling, so cloudflared's IPv4 connections would arrive as `::ffff:172.31.255.250` and SSO would stop working unless `::ffff:172.31.255.248/125` is also trusted; its request-locality logic would also need checking against IPv6 overlay sources.
+- **B. A `socat` forwarder** on `shared-services` holding the overlay binding and forwarding to `codex-lb:2455` over IPv4. codex-lb would see every overlay client as the forwarder's address.
+- **C. Leave codex-lb off the overlay (chosen).** Its `ports:` entry is removed; the stack file is back to its pre-#243 state.
+
+**defined.net, as configured (supersedes §4.2 items 1–3).**
+- silverstone has role `Home` (no dedicated `silverstone` role) and the `access:cpa` and `access:codex-lb` tags.
+- Inbound on role `Home`: ICMP from any host; TCP 22 from `role:Home` and from `role:Work`; TCP 8317 from `role:Home` AND `t:access:cpa`; TCP 2455 from `role:Home` AND `t:access:codex-lb` (unused now). **SSH over the overlay to silverstone and every Home machine is accepted by the user.** A machine with another role is refused 8317 even with the tag.
+- Listen port `0` (random), not 4242; no `docker:host` underlay tag yet, so silverstone advertises its Docker bridge addresses.
+- The workstation advertises its Tailscale addresses (`100.73.74.58`, `fd7a:…`) as Nebula underlay endpoints; silverstone received handshakes from them. An allow-list tag on the workstation would stop Nebula riding inside Tailscale.
+
+**Tag changes need a certificate refresh.** After the tags were added, the workstation's TCP to 8317 was dropped by silverstone's Nebula firewall (no packets on `dn-*`) until `sudo systemctl restart dnclient` on the workstation reissued its certificate with `t:access:cpa`. Then `/healthz` returned 200 and `/v1/models` without a key 401.
+
+**Enrollment** succeeded on the first start with `cap_drop: [ALL]` + `NET_ADMIN`; `nebula.env` was emptied afterwards.
