@@ -224,7 +224,10 @@ services:
     # First-party agent daemon. `gateway run` serves the OpenAI-compatible API on :8642 and
     # (HERMES_DASHBOARD=1) the dashboard on :9119 as a co-resident s6-rc service. s6 supervises
     # both, so a mis-start restarts in-container (no Docker crash-loop).
-    image: nousresearch/hermes-agent:v2026.9.24
+    # Slim tag: Bot Screen runs in the docker sandbox (dind below), not in this container, so the
+    # -desktop packages (~930 MB) are not needed here. Upstream moved from calver (v2026.9.24) to
+    # semver (v0.23.x); the docker image still ships the docker CLI (verified 2026-11-26).
+    image: nousresearch/hermes-agent:v0.23.4
     container_name: hermes-gateway
     hostname: hermes-gateway
     command: gateway run
@@ -233,7 +236,12 @@ services:
         condition: service_healthy
       op-init:
         condition: service_completed_successfully
+      dind:
+        condition: service_healthy
     environment:
+      # Bot Screen sandbox: terminal.backend=docker drives this daemon (the dind service), never the
+      # host's. See the dind service for the one-time config.yaml settings.
+      - DOCKER_HOST=tcp://dind:2375
       # /opt/data (HERMES_HOME) is chowned to this uid/gid by the image's s6 init.
       - HERMES_UID=1000
       - HERMES_GID=1000
@@ -288,6 +296,44 @@ services:
     networks:
       - hermes-net
       - shared-services
+      - dind-net
+
+  dind:
+    restart: unless-stopped
+    # Private Docker daemon for Hermes' Bot Screen. With terminal.backend=docker and
+    # bot_desktop.placement=auto, Hermes runs the sandbox container (Xvnc + Xfce + headed Chromium
+    # + cua-driver) through this daemon and drives it with `docker exec`. Nothing here touches the
+    # host's Docker. Tradeoff: dind must be privileged, so a sandbox escape is a dind-container
+    # compromise; the unauthenticated tcp:2375 is root-equivalent, so it sits on dind-net, shared
+    # only with hermes-gateway. Not exposed to hermes-net (camofox, open-webui) or published.
+    #
+    # One-time setup, after first deploy (config.yaml lives in /mnt/spool/apps/data/hermes/gateway):
+    #   docker exec hermes-gateway hermes config set terminal.backend docker
+    #   docker exec hermes-gateway hermes config set terminal.docker_image nousresearch/hermes-sandbox:v0.23.4-desktop
+    #   docker exec hermes-gateway hermes config set bot_desktop.placement terminal
+    #   docker exec hermes-gateway hermes config set browser.headed true
+    #   docker exec hermes-gateway hermes computer-use screen status
+    # The sandbox image is pinned like the gateway; bump both together. Sandbox state (/root,
+    # /workspace, browser profile) lives in dind-data, not under /opt/data: bind sources resolve
+    # on THIS daemon's filesystem.
+    # CAMOFOX_URL above still routes the agent's browser tools to camofox; Bot Screen's headed
+    # Chromium is used by computer_use. Unset CAMOFOX_URL to send browser tools there too.
+    image: docker:29.10.1-dind
+    container_name: hermes-dind
+    hostname: dind
+    privileged: true
+    environment:
+      - DOCKER_TLS_CERTDIR=            # empty = plain tcp://0.0.0.0:2375, only on dind-net
+    volumes:
+      - dind-data:/var/lib/docker
+    healthcheck:
+      test: ["CMD", "docker", "info"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - dind-net
 
   open-webui:
     restart: unless-stopped
@@ -417,9 +463,11 @@ configs:
 volumes:
   op-bin:   # ephemeral bridge: populated by op-init, consumed by hermes-gateway
   occamy-data:  # Occamy's signing key
+  dind-data:    # dind's images and Bot Screen sandbox state
 
 networks:
   hermes-net:
+  dind-net:   # hermes-gateway <-> dind only
   # Created out-of-band on the host: `docker network create shared-services`.
   # Shared with the hindsight stack so hermes-gateway resolves `hindsight` by name.
   shared-services:
