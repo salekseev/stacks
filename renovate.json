@@ -25,6 +25,14 @@
     },
     {
       "customType": "regex",
+      "description": "the hermes sandbox image is the upstream -desktop sandbox plus Chrome (stacks/hermes-sandbox/Dockerfile), tagged <upstream tag>-chrome; track the upstream image so the tag in stacks/hermes.yaml moves in the same PR as the FROM line",
+      "managerFilePatterns": ["/^stacks/hermes\\.yaml$/"],
+      "matchStrings": ["ghcr\\.io/salekseev/hermes-sandbox:(?<currentValue>v[0-9][0-9.]*-desktop)-chrome"],
+      "depNameTemplate": "nousresearch/hermes-sandbox",
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
       "description": "nod image tags in stacks/nod.yaml are the upstream version; .github/workflows/nod-images.yml builds them from release tag nod-v<version>",
       "managerFilePatterns": ["/^stacks/nod\\.yaml$/"],
       "matchStrings": ["image: ghcr\\.io/salekseev/nod-[a-z]+:(?<currentValue>\\S+)"],
@@ -50,6 +58,12 @@
       "description": "our codex-lb image is the upstream release plus a patch (stacks/codex-lb/Dockerfile) and is rebuilt by CI; upstream bumps arrive through the FROM line there and the codex-lb custom manager above, not docker tag lookups",
       "matchDatasources": ["docker"],
       "matchPackageNames": ["ghcr.io/salekseev/codex-lb"],
+      "enabled": false
+    },
+    {
+      "description": "our hermes-sandbox image is the upstream sandbox plus Chrome and is rebuilt by CI; upstream bumps arrive through the FROM line in stacks/hermes-sandbox/Dockerfile and the custom manager above, not docker tag lookups",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["ghcr.io/salekseev/hermes-sandbox"],
       "enabled": false
     },
     {

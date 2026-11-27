@@ -1,0 +1,79 @@
+# Builds the Hermes Bot Screen sandbox with Google Chrome (stacks/hermes-sandbox/Dockerfile) and
+# publishes it as a ghcr.io package. The upstream sandbox only ships Playwright's Chromium.
+#
+# Tag contract: <base tag>-chrome, where the base tag is read from the FROM line of the Dockerfile
+# (e.g. v0.23.4-desktop -> v0.23.4-desktop-chrome) — derived, never hand-written. Renovate bumps that
+# FROM line and the matching tag in stacks/hermes.yaml in one pull request (customManagers in
+# renovate.json); the build fails if the two disagree. Chrome itself is "stable" at build time, so
+# run this workflow manually (workflow_dispatch) to pick up a newer Chrome. PRs build for
+# verification (no push); master pushes. The package must be public for the dind daemon to pull it.
+name: hermes-sandbox image
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - stacks/hermes-sandbox/**
+      - stacks/hermes.yaml
+      - .github/workflows/hermes-sandbox-image.yml
+  # Pull requests run this through .github/workflows/ci.yml, which decides
+  # from the changed paths whether to call it.
+  workflow_call:
+  workflow_dispatch:
+
+concurrency:
+  group: hermes-sandbox-image-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Image coordinates (tag = base tag + -chrome)
+        id: meta
+        run: |
+          base=$(sed -nE 's#^FROM nousresearch/hermes-sandbox:(v[0-9][^@ ]*).*#\1#p' stacks/hermes-sandbox/Dockerfile)
+          test -n "$base"
+          if ! grep -qF "ghcr.io/salekseev/hermes-sandbox:${base}-chrome" stacks/hermes.yaml; then
+            echo "::error::stacks/hermes.yaml must name ghcr.io/salekseev/hermes-sandbox:${base}-chrome, the tag this build publishes"
+            exit 1
+          fi
+          echo "tag=${base}-chrome" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/${{ github.repository_owner }}/hermes-sandbox" >> "$GITHUB_OUTPUT"
+
+      - name: Login to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: stacks/hermes-sandbox
+          platforms: linux/amd64
+          load: ${{ github.event_name == 'pull_request' }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}
+          cache-from: type=gha,scope=hermes-sandbox
+          cache-to: type=gha,scope=hermes-sandbox,mode=max
+
+      # The path Hermes launches must be Chrome, and it must start as the desktop user.
+      - name: Verify the Playwright Chromium path launches Chrome
+        if: github.event_name == 'pull_request'
+        run: |
+          docker run --rm --entrypoint bash "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}" -c '
+            set -e
+            c=$(ls /opt/playwright/chromium-*/chrome-linux*/chrome | head -n1)
+            "$c" --version | grep -q "Google Chrome"
+            su pn -c "timeout 60 $c --headless=new --no-sandbox --disable-dev-shm-usage --disable-gpu --dump-dom about:blank" | grep -q "<html>"
+          '
