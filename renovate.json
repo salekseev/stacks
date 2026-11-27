@@ -59,12 +59,6 @@
   ],
   "packageRules": [
     {
-      "description": "v3rt3p images are pinned to their submodule SHA and rebuilt by CI; bumps come from submodule updates (same commit), not docker tag lookups",
-      "matchDatasources": ["docker"],
-      "matchPackageNames": ["ghcr.io/salekseev/v3rt3p-{/,}**"],
-      "enabled": false
-    },
-    {
       "description": "nod images are built by CI from upstream releases; bumps come from the n8n-io/nod custom manager above, not docker tag lookups (a tag exists only after the bump is merged)",
       "matchDatasources": ["docker"],
       "matchPackageNames": ["ghcr.io/salekseev/nod-{/,}**"],

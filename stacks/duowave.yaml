@@ -1,8 +1,9 @@
 # $schema: https://raw.githubusercontent.com/compose-spec/compose-spec/refs/heads/main/schema/compose-spec.json
 #
-# DuoWave gateway for the Yandex Station Midi. Replaces the v3rt3p stack in
-# stacks/yandex-station.yaml as the thing the speaker talks to. That file and
-# its volumes stay. This stack does not start them.
+# DuoWave gateway for the Yandex Station Midi. It replaced the v3rt3p stack
+# (stacks/yandex-station.yaml, removed) as the thing the speaker talks to. The
+# v3rt3p host dirs under /mnt/spool/apps/{config,data}/yandex-station/v3rt3p
+# stay: duowave_env below is read from there.
 #
 # The speaker reaches the gateway on the IoT VLAN at 192.168.99.10:7780.
 # ipvlan L2 parent ens1f0v2 is the VLAN 99 access port. Publishing a host port
