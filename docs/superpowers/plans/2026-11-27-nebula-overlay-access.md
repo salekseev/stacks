@@ -505,6 +505,18 @@ for h in 192.168.1.10 "[2600:4040:5b42:2501:ae1f:6bff:fe2c:abf6]"; do for p in 8
 ```
 Expected: `exit=7` (connection refused) for all four.
 
+- [ ] **Step 6b: Accepted paths around Nebula (spec §3)**
+
+From a container on silverstone that is not on `shared-services`:
+```bash
+ssh silverstone.local 'sudo docker run --rm --network bridge curlimages/curl:8.17.0 -g -s -o /dev/null -m 5 -w "%{http_code}\n" "http://[OVERLAY_V6]:8317/healthz"'
+```
+Expected: `200` (accepted exposure, recorded in the as-built). From the LAN, bypassing this machine's own overlay route with a temporary `/128` `[USER]`:
+```bash
+! sudo ip -6 route add OVERLAY_V6/128 via 2600:4040:5b42:2501:ae1f:6bff:fe2c:abf6 dev eno1; curl -g -s -o /dev/null -m 5 -w "%{http_code}\n" "http://[OVERLAY_V6]:8317/healthz"; sudo ip -6 route del OVERLAY_V6/128
+```
+Expected: `200`, then the route is gone (`ip -6 route get OVERLAY_V6` shows the `dn-*` interface again).
+
 - [ ] **Step 7: Underlay addresses `[USER]`**
 
 defined.net → host `silverstone`: the advertised addresses come only from `eno1` and `ens1f0np0` (LAN IPv4 `192.168.1.10`, the `2600:4040:5b42:2501::/64` addresses, and the public address the lighthouse sees). No `172.*`, `fdd0:*`, `100.*` or `fd7a:*` addresses.

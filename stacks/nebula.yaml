@@ -10,6 +10,10 @@
 #   "[fdef:c0:c0:9189:b06a:11df:1076:327c]:2455:2455"   (stacks/codex-lb.yaml)
 # Nebula's firewall (role "silverstone" in the defined.net UI) admits each port
 # only from hosts carrying that port's access:* tag; nothing else is open.
+# Accepted: Docker's DNAT matches the address on any interface, so hosts on
+# silverstone's LAN segment that add a route to it, and containers on
+# silverstone, reach those ports without passing Nebula. For them the
+# gateways' own keys are the only gate.
 # net.ipv6.ip_nonlocal_bind=1 (a TrueNAS sysctl tunable) lets those ports bind
 # before this container has created the interface, so start order is irrelevant.
 #

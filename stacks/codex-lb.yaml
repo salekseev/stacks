@@ -14,8 +14,9 @@
 #   /mnt/spool/apps/config/codex-lb/codex-lb/     -> encryption.key (auto-created 0600 on first start)
 #   /mnt/spool/apps/config/codex-lb/cloudflared/  -> tunnel.json (tunnel credentials)
 # Published only on silverstone's Nebula overlay address (stacks/nebula.yaml),
-# port 2455, for machines tagged access:codex-lb; nothing on LAN or public
-# addresses. SSO identity (the Cf-Access header) is honoured only
+# port 2455, for machines tagged access:codex-lb; not bound on LAN or public
+# addresses (accepted: the LAN segment and containers on silverstone can still
+# route to it, see stacks/nebula.yaml). SSO identity (the Cf-Access header) is honoured only
 # from cloudflared, which validates the Access JWT. Port 2455 is also reachable
 # from shared-services and the overlay; there the dashboard offers only the break-glass local
 # login (local sign-in policy `break_glass_only`, TOTP-enrolled admin, set in the

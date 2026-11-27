@@ -18,6 +18,7 @@ Requirements:
 2. **No defined.net routes.** The free plan allows 2; this design uses none. It uses one host (of 100).
 3. **IPv6-only overlay.** The network has no IPv4 range, and this design does not add one.
 4. **No proxy.** The user accepts that each gateway's whole port is reachable from overlay hosts that the Nebula firewall admits: CPA's `/v1` and `/v8/management` (guarded by the management key), and codex-lb's proxy routes and dashboard (proxy routes need an API key; the dashboard offers only its local login, password plus TOTP, as on `shared-services` today).
+   Accepted 2026-11-27: the same ports are also reachable without passing Nebula from silverstone's LAN segment (a host that adds a route to the overlay address via silverstone) and from containers on silverstone, including the nod and hermes sandboxes. Docker's DNAT for a published port matches the destination address on any interface. The keys and codex-lb's local login are the gate for those paths. Rejected alternative: a `DOCKER-USER` rule admitting only `dn-*` interfaces, set up by a TrueNAS post-init script.
 5. **Works for every overlay member, including the work laptop,** where Tailscale does not work but Nebula does. Tailscale keeps running side by side on other machines and plays no part here.
 
 Not a goal: overlay DNS, publishing OMC (`8080`) or codex-lb's OAuth callback port (`1455`) on the overlay.
@@ -52,7 +53,8 @@ laptop (dnclient, tags access:cpa / access:codex-lb)
 - `shared-services` is the only IPv6 network on either container (`cpa-internal` and `codex-lb-edge` are IPv4-only), so Docker DNATs the overlay IPv6 address to the container's `shared-services` address; no IPv4 translation is involved. That Docker picks `shared-services` as codex-lb's IPv6 gateway endpoint, given its second network `codex-lb-edge` *(verify)*; if not, `gw_priority` on `shared-services` fixes it.
 - Clients keep their overlay source address through the DNAT. codex-lb trusts the Cloudflare Access identity header only from `172.31.255.248/29` (`codex-lb-edge`), so a header forged by an overlay client is ignored, as one forged on `shared-services` is today.
 - **Boot order does not matter.** `net.ipv6.ip_nonlocal_bind=1` is already set on silverstone, so Docker can bind the published ports to the overlay address before dnclient has created the interface. Without it, `cliproxyapi` and `codex-lb` would fail to start whenever dnclient came up second, taking their internal paths down too; §6 covers keeping it set.
-- Nothing is published on LAN or public addresses. OMC, CPA's OAuth callback ports and codex-lb's `1455` stay unpublished.
+- No port is bound on LAN or public addresses. OMC, CPA's OAuth callback ports and codex-lb's `1455` stay unpublished.
+- **Accepted exposure:** Docker's DNAT for a published port matches the destination address on any interface, so LAN hosts that route to it and containers on silverstone reach both ports without Nebula's firewall (§1, requirement 4).
 
 ## 4. Changes
 
@@ -119,6 +121,7 @@ Two gates, in order: the Nebula certificate plus the firewall tag (machine level
 | `ip_nonlocal_bind` lost after a reboot or TrueNAS upgrade | `cliproxyapi` and `codex-lb` fail to start if dnclient is not up yet, which breaks their internal paths too | Make it a TrueNAS sysctl tunable (System → Advanced → Sysctl) instead of relying on whatever sets it now *(verify which)* |
 | Overlay address changed in the UI | Published ports bound to a stale address; overlay access lost | Address is fixed at creation; changing it means editing both stack files |
 | An overlay machine is lost or stolen | Its Nebula certificate and gateway keys work until revoked | Delete the host in defined.net, then its keys in OMC and codex-lb |
+| A LAN device or a container on silverstone routes to the overlay address | Reaches 8317 and 2455 without Nebula | Accepted; keys, the management key and codex-lb's password plus TOTP gate it. Revisit with a `DOCKER-USER` rule if a sandbox or LAN device becomes untrusted |
 | A firewall rule widened to "any" | TrueNAS SSH, web UI and SMB exposed to every overlay host | Rules are per port and per tag; the verification probes those ports |
 | Docker bridge addresses leak to the lighthouse | Peers try unreachable endpoints; slow or relayed connections | Underlay allow list (§4.2 item 2) |
 | Work network blocks direct UDP | Traffic relayed through the managed lighthouse | Acceptable latency for API calls |
@@ -133,6 +136,7 @@ Two gates, in order: the Nebula certificate plus the firewall tag (machine level
 4. **Overlay, denied:** from an overlay host without the tags, connecting to 8317 and 2455 times out; with only `access:cpa`, 2455 times out.
 5. **Overlay, other ports:** from the workstation, silverstone's overlay address on TCP 22, 80, 443, 445 and 1455 times out.
 6. **Not on the LAN:** `192.168.1.10` and silverstone's global IPv6 refuse on 8317 and 2455.
+6b. **Accepted paths, documented:** a container on Docker's default bridge on silverstone, and the workstation with a temporary `/128` route to the overlay address via silverstone's LAN IPv6, both get `200` from CPA's `/healthz`.
 7. **Underlay:** the defined.net host page lists only `eno1`/`ens1f0np0` addresses.
 8. **Boot order:** stop `nebula`, recreate `cliproxyapi`; it starts and passes step 1; start `nebula` again and step 3 passes. (codex-lb is not recreated for this test, to avoid its five-minute warm-up; it uses the same mechanism.)
 9. **Clients:** one short `claude -p` round-trip through CPA, and one `/v1/responses` call through codex-lb, from the workstation over the overlay; each dashboard shows it under that machine's key.

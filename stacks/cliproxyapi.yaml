@@ -22,13 +22,15 @@
 #   /mnt/spool/apps/data/cliproxyapi/omc/            -> OMC SQLite (encrypted with the master key)
 #
 # Published only on silverstone's Nebula overlay address (stacks/nebula.yaml),
-# port 8317; nothing on LAN or public addresses. CPA's OAuth callback ports are
-# never published.
+# port 8317; not bound on LAN or public addresses. CPA's OAuth callback ports
+# are never published.
 # OMC is reachable only through cloudflared (Cloudflare Access, origin JWT check),
 # then its own login (= the CPA management key). OMC is NOT on shared-services.
 # Accepted exposure: CPA serves /v1 and /v8/management on one port, and OMC needs
 # management.allow-remote, so the management API is reachable from shared-services
 # and from admitted overlay machines, guarded by the management key only.
+# Accepted: the LAN segment and containers on silverstone can also route to the
+# overlay address (stacks/nebula.yaml), with the same key as the only gate.
 # Not deployed: oh-my-cpa-updater (mounts the Docker socket). Renovate updates.
 # Off by policy in OMC's UI: quota warmup, Agent, plugins.
 
