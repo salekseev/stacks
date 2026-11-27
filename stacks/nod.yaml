@@ -50,7 +50,7 @@
 services:
 
   server:
-    image: ghcr.io/salekseev/nod-server:0.9.8
+    image: ghcr.io/salekseev/nod-server:0.10.0
     container_name: nod-server
     hostname: nod-server
     init: true
@@ -155,7 +155,7 @@ services:
   # exec + inspect on the two containers named below (no privileged, TTY,
   # detached or env-carrying execs). Reachable only on the internal control net.
   runtime:
-    image: ghcr.io/salekseev/nod-runtime:0.9.8
+    image: ghcr.io/salekseev/nod-runtime:0.10.0
     container_name: nod-runtime
     init: true
     environment:
@@ -173,7 +173,7 @@ services:
     restart: unless-stopped
 
   browser:
-    image: ghcr.io/salekseev/nod-browser:0.9.8
+    image: ghcr.io/salekseev/nod-browser:0.10.0
     # The name is part of the runtime allowlist (must match BROWSER_CONTAINER).
     container_name: nod-browser-nod
     hostname: nod-browser
@@ -205,7 +205,7 @@ services:
     restart: unless-stopped
 
   workspace:
-    image: ghcr.io/salekseev/nod-workspace:0.9.8
+    image: ghcr.io/salekseev/nod-workspace:0.10.0
     # The name is part of the runtime allowlist (must match WORKSPACE_CONTAINER).
     container_name: nod-workspace-nod
     init: true
@@ -228,7 +228,7 @@ services:
   # Firewall for the workspace: blocks private/reserved IPv4 (so the agent's
   # shell cannot reach the LAN, codex-lb or cloud metadata) and external IPv6.
   workspace-network:
-    image: ghcr.io/salekseev/nod-workspace:0.9.8
+    image: ghcr.io/salekseev/nod-workspace:0.10.0
     container_name: nod-workspace-network
     dns: [1.1.1.1, 8.8.8.8]
     user: root
