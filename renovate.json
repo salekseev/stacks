@@ -129,6 +129,17 @@
         "renovate",
         "automerge"
       ]
+    },
+    {
+      "description": "CLIProxyAPI and Oh My CPA are tested together (docs/superpowers/specs/2026-11-26-cliproxyapi-gateway-design.md §6): OMC rewrites CPA's config, so bumps of either arrive as one reviewed PR, never automerged. Placed after the patch/minor/major rules so it wins",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["eceasy/cli-proxy-api", "wiziscool/oh-my-cpa"],
+      "groupName": "cliproxyapi",
+      "automerge": false,
+      "labels": [
+        "dependencies",
+        "renovate"
+      ]
     }
   ],
   "labels": [
