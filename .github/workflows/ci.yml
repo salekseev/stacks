@@ -29,6 +29,7 @@ jobs:
       v3rt3p: ${{ steps.paths.outputs.v3rt3p }}
       codex-lb: ${{ steps.paths.outputs.codex-lb }}
       hermes-sandbox: ${{ steps.paths.outputs.hermes-sandbox }}
+      hermes-gateway: ${{ steps.paths.outputs.hermes-gateway }}
     steps:
       - name: Which images does this pull request touch?
         id: paths
@@ -43,6 +44,7 @@ jobs:
           touched nod      '^(stacks/nod/|stacks/nod\.yaml$|\.github/workflows/(nod-images|ci)\.yml$)'
           touched v3rt3p   '^(stacks/yandex-station/|stacks/yandex-station\.yaml$|\.github/workflows/(v3rt3p-images|ci)\.yml$)'
           touched codex-lb '^(stacks/codex-lb/|stacks/codex-lb\.yaml$|\.github/workflows/(codex-lb-image|ci)\.yml$)'
+          touched hermes-gateway '^(stacks/hermes-gateway/|stacks/hermes\.yaml$|\.github/workflows/(hermes-gateway-image|ci)\.yml$)'
           touched hermes-sandbox '^(stacks/hermes-sandbox/|stacks/hermes\.yaml$|\.github/workflows/(hermes-sandbox-image|ci)\.yml$)'
 
   nod:
@@ -77,8 +79,16 @@ jobs:
       packages: write
     uses: ./.github/workflows/hermes-sandbox-image.yml
 
+  hermes-gateway:
+    needs: changes
+    if: needs.changes.outputs.hermes-gateway == 'true'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/hermes-gateway-image.yml
+
   ci:
-    needs: [changes, nod, v3rt3p, codex-lb, hermes-sandbox]
+    needs: [changes, nod, v3rt3p, codex-lb, hermes-sandbox, hermes-gateway]
     if: always()
     runs-on: ubuntu-latest
     steps:
