@@ -63,3 +63,37 @@ keep mode 770 until Hermes prunes them (24 h idle). Do not "fix" this with a tmp
 
 **The `op` binary** comes from our gateway image (`stacks/hermes-gateway/Dockerfile`, published
 as `ghcr.io/salekseev/hermes-gateway`), not from a volume or an init container.
+
+## Hermes: the Hindsight memory plugin reads its config file before the environment
+
+**Symptoms.** Memory never saves. `/opt/data/logs/errors.log` shows either
+`No module named 'hindsight_client'` on every retain, or the plugin talking to the wrong server
+(`Hindsight API at http://localhost:8888 reports version None`).
+
+**Two separate causes.**
+
+1. **Wrong config.** The plugin (`/opt/data/plugins/hindsight`) reads `/opt/data/hindsight/config.json`
+   first and only falls back to `HINDSIGHT_MODE` / `HINDSIGHT_API_URL` / `HINDSIGHT_BANK_ID` when that
+   file is missing or empty. The compose file sets those variables, but a `config.json` written with
+   defaults (`"mode": "cloud"`, `"api_url": "http://localhost:8888"`) silently overrides them. From inside
+   the gateway container `localhost` is the container itself. It must say:
+
+   ```json
+   "mode": "local_external",
+   "api_url": "http://hindsight:8888/api",
+   "bank_id": "hermes"
+   ```
+
+   `/api` is the server's `HINDSIGHT_API_BASE_PATH`; `hindsight` resolves over the `shared-services`
+   network. The key is `HINDSIGHT_API_KEY` in `/opt/data/.env` (leave `apiKey` out of the JSON).
+
+2. **Missing client.** The v0.23 base image does not ship `hindsight-client`, the plugin imports it, and
+   `HERMES_DISABLE_LAZY_INSTALLS=1` plus a root-owned venv stop it installing at runtime.
+   `stacks/hermes-gateway/Dockerfile` installs it; the `-hs<version>` part of the image tag is that
+   version. The base image enforces a 3-day uv release cooldown, so a client release newer than three
+   days cannot be installed: pin the newest older one and let Renovate move it later.
+
+**Verify.** `grep "Hindsight initialized" /mnt/spool/apps/data/hermes/gateway/logs/agent.log | tail -1`
+should show `mode=local_external, api_url=http://hindsight:8888/api, bank=hermes`, and no new
+`hindsight_client` errors in `errors.log`. The server answers `GET http://hindsight:8888/api/version`
+without a key.

@@ -49,6 +49,22 @@
     },
     {
       "customType": "regex",
+      "description": "the hs half of the hermes gateway tag: the hindsight-client version that stacks/hermes-gateway/Dockerfile pip-installs into the image",
+      "managerFilePatterns": ["/^stacks/hermes\\.yaml$/"],
+      "matchStrings": ["ghcr\\.io/salekseev/hermes-gateway:v[0-9][0-9.]*-op[0-9][0-9.]*-hs(?<currentValue>[0-9][0-9.]*)"],
+      "depNameTemplate": "hindsight-client",
+      "datasourceTemplate": "pypi"
+    },
+    {
+      "customType": "regex",
+      "description": "the hindsight-client pin in the hermes gateway Dockerfile",
+      "managerFilePatterns": ["/^stacks/hermes-gateway/Dockerfile$/"],
+      "matchStrings": ["hindsight-client==(?<currentValue>[0-9][0-9.]*)"],
+      "depNameTemplate": "hindsight-client",
+      "datasourceTemplate": "pypi"
+    },
+    {
+      "customType": "regex",
       "description": "nod image tags in stacks/nod.yaml are the upstream version; .github/workflows/nod-images.yml builds them from release tag nod-v<version>",
       "managerFilePatterns": ["/^stacks/nod\\.yaml$/"],
       "matchStrings": ["image: ghcr\\.io/salekseev/nod-[a-z]+:(?<currentValue>\\S+)"],
@@ -165,6 +181,16 @@
       "matchDatasources": ["docker"],
       "matchPackageNames": ["nousresearch/hermes-agent", "nousresearch/hermes-sandbox", "1password/op"],
       "groupName": "hermes",
+      "automerge": false,
+      "labels": [
+        "dependencies",
+        "renovate"
+      ]
+    },
+    {
+      "description": "The Hindsight server and the client baked into the hermes gateway move together (the client is the same major as the server): one reviewed PR, never automerged",
+      "matchPackageNames": ["ghcr.io/vectorize-io/hindsight", "hindsight-client"],
+      "groupName": "hindsight",
       "automerge": false,
       "labels": [
         "dependencies",
