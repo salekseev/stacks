@@ -112,8 +112,19 @@ services:
     #   docker exec hermes-gateway hermes computer-use screen status
     # That image is stacks/hermes-sandbox/Dockerfile: the upstream -desktop sandbox with Google Chrome
     # swapped in for Playwright's Chromium (CI publishes it; Hermes ignores browser.executable_path in
-    # sandbox placement). It is pinned like the gateway; bump both together. Sandbox state (/root,
-    # /workspace, browser profile) lives in dind-data, not under /opt/data.
+    # sandbox placement). It is pinned like the gateway; bump both together.
+    #
+    # Sandbox state and where it lives (corrected 2026-11-27; this comment used to say "dind-data"):
+    #   - the container's own filesystem (everything not listed below) lives in dind-data, but only as
+    #     long as Hermes keeps that container: it removes Exited sandboxes older than 2x
+    #     terminal.lifetime_seconds at startup, so do not keep anything precious there;
+    #   - /root and /workspace are bind mounts of /opt/data/sandboxes/docker/... resolved on THIS
+    #     daemon, i.e. on dind's own filesystem, which is lost when hermes-dind is recreated, unless that
+    #     path is mounted from the host (sandboxes below);
+    #   - the browser profile (cookies, logins, Cloudflare clearance) is a fixed path in sandbox
+    #     placement: Hermes ignores browser.user_data_dir there and uses
+    #     /home/pn/.hermes/bot-desktop/browser-profile inside the sandbox. browser-profile below is
+    #     the host directory bind-mounted over it through terminal.docker_volumes (stacks/AGENTS.md).
     #
     # Bind sources resolve on THIS daemon's filesystem, not the gateway's. Hermes bind-mounts
     # /opt/data/skills, /opt/data/cache/*, browser_screenshots, images, attachments and composer-pastes
@@ -138,6 +149,9 @@ services:
       - /mnt/spool/apps/data/hermes/gateway/images:/opt/data/images:ro
       - /mnt/spool/apps/data/hermes/gateway/attachments:/opt/data/attachments:ro
       - /mnt/spool/apps/data/hermes/gateway/composer-pastes:/opt/data/composer-pastes:ro
+      # Read-write, and durable: the sandbox's /root and /workspace, and its browser profile.
+      - /mnt/spool/apps/data/hermes/gateway/sandboxes:/opt/data/sandboxes
+      - /mnt/spool/apps/data/hermes/gateway/browser-profile:/opt/data/browser-profile
     healthcheck:
       test: ["CMD", "docker", "info"]
       interval: 15s

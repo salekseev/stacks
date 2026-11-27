@@ -125,3 +125,46 @@ If Hermes starts mounting another `/opt/data` directory (the log line is `Docker
 
 **Disk quota warning.** "Docker storage driver does not support per-container disk limits" is harmless:
 dind's `overlay2` has no XFS project quota. `terminal.container_disk: 0` stops the warning.
+
+## Hermes: keep the sandbox browser profile (logins, Cloudflare clearance) across redeploys
+
+**Why it matters.** A site that fronts itself with Cloudflare's interactive "Verify you are human" check
+(home-barista.com does) only asks a *new* client. A client holding a valid `cf_clearance` cookie and its
+signed-in session is not challenged again. The old Camofox profile never saw the challenge for that reason:
+it carried both for months. Hermes' Chrome starts with an empty profile, so it is challenged until a human
+clears it once (Bot Screen: Take over, click the checkbox, sign in, Hand back).
+
+**The profile must be durable.** In sandbox placement Hermes ignores `browser.user_data_dir` and always
+uses `/home/pn/.hermes/bot-desktop/browser-profile` inside the sandbox. That is the sandbox container's own
+filesystem, which Hermes may remove (orphan reaper) and which does not survive a new container. So the host
+directory is bind-mounted over that exact path:
+
+1. `stacks/hermes.yaml` mounts `gateway/browser-profile` and `gateway/sandboxes` into `hermes-dind` at
+   the same `/opt/data/...` paths (bind sources resolve on dind, see the section above).
+2. Create the host directory once, owned by the gateway user (uid 1000, the sandbox's `pn`):
+   `mkdir -p /mnt/spool/apps/data/hermes/gateway/browser-profile`
+3. Add the mount to the sandbox (merge into the existing list; a second `docker_volumes:` key silently
+   overrides the first):
+
+   ```sh
+   docker exec -u 1000:1000 -e HERMES_HOME=/opt/data hermes-gateway hermes config set terminal.docker_volumes \
+     '["/opt/data/cache/documents:/output","/opt/data/browser-profile:/home/pn/.hermes/bot-desktop/browser-profile"]'
+   ```
+
+   Changing `docker_volumes` changes the container's environment label, so Hermes creates a fresh sandbox
+   that has the mount.
+
+**Verify.** `docker exec hermes-dind docker exec -u pn <sandbox> sh -c 'mount | grep browser-profile'`
+shows the bind, and `ls /mnt/spool/apps/data/hermes/gateway/browser-profile` on the host fills with Chrome's
+profile files once the browser has run. Cookies then survive `docker rm` of the sandbox and a dind recreate.
+
+**Do not** copy `cf_clearance` from a *different* browser's profile (Camofox's Firefox, for example).
+Cloudflare ties it to the client's user agent and IP, so it does not transfer. Let a human clear it once in
+this profile.
+
+**Hermes running on your own computer** has a documented alternative: `browser.use_real_profile: true` in
+that machine's `~/.hermes/config.yaml` (Desktop: Capabilities > Tools > Browser > "Use My Real Browser
+Profile"). Hermes snapshots your default Chromium-family browser's active profile and drives the same
+real browser binary, so logins and any clearance you earned there come along. It uses the machine
+Hermes runs on, so it does not apply to the silverstone gateway, and the agent then acts with *all* of your
+real logins (the docs call it "a consent-gated convenience, not an isolation boundary").
