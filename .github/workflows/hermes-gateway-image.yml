@@ -1,8 +1,9 @@
 # Builds the Hermes gateway with the 1Password CLI (stacks/hermes-gateway/Dockerfile) and publishes
 # it as a ghcr.io package. Hermes runs `op` in the gateway process and never installs it.
 #
-# Tag contract: <hermes tag>-op<op version>, both read from the Dockerfile (e.g. v0.23.4-op2.42.0) —
-# derived, never hand-written. Renovate bumps the FROM / COPY --from lines and the matching tag in
+# Tag contract: <hermes tag>-op<op version>-hs<hindsight-client version>, all read from the Dockerfile
+# (e.g. v0.23.4-op2.42.0-hs1.2.3) — derived, never hand-written. Renovate bumps the FROM / COPY --from /
+# pip pin lines and the matching tag in
 # stacks/hermes.yaml in one pull request (customManagers + the "hermes" group in renovate.json);
 # the build fails if they disagree. PRs build for verification (no push); master pushes. The
 # package must be public for Portainer to pull it.
@@ -36,13 +37,14 @@ jobs:
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
-      - name: Image coordinates (tag = hermes tag + -op + op version)
+      - name: Image coordinates (tag = hermes tag + -op + op version + -hs + client version)
         id: meta
         run: |
           hermes=$(sed -nE 's#^FROM nousresearch/hermes-agent:(v[0-9][^@ ]*).*#\1#p' stacks/hermes-gateway/Dockerfile)
           op=$(sed -nE 's#^COPY --from=1password/op:([0-9][^@ ]*) .*#\1#p' stacks/hermes-gateway/Dockerfile)
-          test -n "$hermes" && test -n "$op"
-          tag="${hermes}-op${op}"
+          hs=$(sed -nE 's#.*hindsight-client==([0-9][^ \\]*).*#\1#p' stacks/hermes-gateway/Dockerfile | head -n1)
+          test -n "$hermes" && test -n "$op" && test -n "$hs"
+          tag="${hermes}-op${op}-hs${hs}"
           if ! grep -qF "ghcr.io/salekseev/hermes-gateway:${tag}" stacks/hermes.yaml; then
             echo "::error::stacks/hermes.yaml must run ghcr.io/salekseev/hermes-gateway:${tag}, the tag this build publishes"
             exit 1
@@ -68,11 +70,12 @@ jobs:
           cache-from: type=gha,scope=hermes-gateway
           cache-to: type=gha,scope=hermes-gateway,mode=max
 
-      - name: Verify op and the docker CLI are on the gateway's PATH
+      - name: Verify op, the docker CLI and the hindsight client work in the gateway image
         if: github.event_name == 'pull_request'
         run: |
           docker run --rm --entrypoint sh "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}" -c '
             set -e
             op --version | grep -Eq "^[0-9]+\."
             command -v docker
+            su -s /bin/sh hermes -c "/opt/hermes/.venv/bin/python -c \"from hindsight_client import Hindsight; from hindsight_client_api.exceptions import NotFoundException\""
           '
