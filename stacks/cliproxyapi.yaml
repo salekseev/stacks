@@ -7,8 +7,10 @@
 # stack is wired to this yet. Accepted risk: Google suspends Antigravity access
 # (403 ToS) for accounts used through third-party tools.
 #
-# Consumers (later) on the external shared-services network call
+# Consumers on the external shared-services network call
 #   http://cliproxyapi:8317/v1   (OpenAI-compatible; Bearer = a key in access.api-keys)
+# Machines on the Nebula overlay tagged access:cpa call
+#   http://[fdef:c0:c0:9189:b06a:11df:1076:327c]:8317     (Claude Code: ANTHROPIC_BASE_URL; one key per machine)
 #
 # Host state (ZFS datasets, apps 568:568 — back up BOTH together; OMC's DB is
 # unreadable without OMCPA_MASTER_KEY, and auths/ is the only copy of the logins):
@@ -19,12 +21,14 @@
 #   /mnt/spool/apps/data/cliproxyapi/cliproxyapi/    -> kv.db, logs/
 #   /mnt/spool/apps/data/cliproxyapi/omc/            -> OMC SQLite (encrypted with the master key)
 #
-# Nothing published to host; CPA's OAuth callback ports are never published.
+# Published only on silverstone's Nebula overlay address (stacks/nebula.yaml),
+# port 8317; nothing on LAN or public addresses. CPA's OAuth callback ports are
+# never published.
 # OMC is reachable only through cloudflared (Cloudflare Access, origin JWT check),
 # then its own login (= the CPA management key). OMC is NOT on shared-services.
 # Accepted exposure: CPA serves /v1 and /v8/management on one port, and OMC needs
-# management.allow-remote, so the management API is reachable from shared-services,
-# guarded by the management key only.
+# management.allow-remote, so the management API is reachable from shared-services
+# and from admitted overlay machines, guarded by the management key only.
 # Not deployed: oh-my-cpa-updater (mounts the Docker socket). Renovate updates.
 # Off by policy in OMC's UI: quota warmup, Agent, plugins.
 
@@ -54,6 +58,11 @@ services:
       - /mnt/spool/apps/data/cliproxyapi/cliproxyapi/logs:/CLIProxyAPI/logs
     expose:
       - "8317"
+    ports:
+      # Overlay address only (stacks/nebula.yaml). Nebula's firewall admits
+      # machines tagged access:cpa. ip_nonlocal_bind lets this bind before
+      # dnclient is up.
+      - "[fdef:c0:c0:9189:b06a:11df:1076:327c]:8317:8317"
     healthcheck:
       # Debian image without curl or wget: speak HTTP through bash's /dev/tcp.
       # /healthz needs no key (same probe as OMC's compose.full.yml).

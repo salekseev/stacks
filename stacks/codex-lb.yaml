@@ -13,9 +13,11 @@
 #   /mnt/spool/apps/data/codex-lb                 -> SQLite DB (CODEX_LB_DATA_DIR default)
 #   /mnt/spool/apps/config/codex-lb/codex-lb/     -> encryption.key (auto-created 0600 on first start)
 #   /mnt/spool/apps/config/codex-lb/cloudflared/  -> tunnel.json (tunnel credentials)
-# Nothing published to host. SSO identity (the Cf-Access header) is honoured only
+# Published only on silverstone's Nebula overlay address (stacks/nebula.yaml),
+# port 2455, for machines tagged access:codex-lb; nothing on LAN or public
+# addresses. SSO identity (the Cf-Access header) is honoured only
 # from cloudflared, which validates the Access JWT. Port 2455 is also reachable
-# from shared-services; there the dashboard offers only the break-glass local
+# from shared-services and the overlay; there the dashboard offers only the break-glass local
 # login (local sign-in policy `break_glass_only`, TOTP-enrolled admin, set in the
 # dashboard after bootstrap). Upstream accounts are added via device-code OAuth,
 # so the 1455 OAuth callback port is never exposed.
@@ -54,6 +56,10 @@ services:
       - /mnt/spool/apps/config/codex-lb/codex-lb:/etc/codex-lb
     expose:
       - "2455"
+    ports:
+      # Overlay address only (stacks/nebula.yaml). Nebula's firewall admits
+      # machines tagged access:codex-lb. Never publish 1455 (OAuth callback).
+      - "[fdef:c0:c0:9189:b06a:11df:1076:327c]:2455:2455"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:2455/health/ready')"]
       interval: 30s
