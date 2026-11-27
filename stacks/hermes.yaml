@@ -123,7 +123,7 @@ services:
     #     path is mounted from the host (sandboxes below);
     #   - the browser profile (cookies, logins, Cloudflare clearance) is a fixed path in sandbox
     #     placement: Hermes ignores browser.user_data_dir there and uses
-    #     /home/pn/.hermes/bot-desktop/browser-profile inside the sandbox. browser-profile below is
+    #     /home/pn/.hermes/bot-desktop/browser-profile inside the sandbox. bot-browser-profile below is
     #     the host directory bind-mounted over it through terminal.docker_volumes (stacks/AGENTS.md).
     #
     # Bind sources resolve on THIS daemon's filesystem, not the gateway's. Hermes bind-mounts
@@ -151,7 +151,10 @@ services:
       - /mnt/spool/apps/data/hermes/gateway/composer-pastes:/opt/data/composer-pastes:ro
       # Read-write, and durable: the sandbox's /root and /workspace, and its browser profile.
       - /mnt/spool/apps/data/hermes/gateway/sandboxes:/opt/data/sandboxes
-      - /mnt/spool/apps/data/hermes/gateway/browser-profile:/opt/data/browser-profile
+      # NOT named browser-profile: Hermes owns $HERMES_HOME/browser-profile (its real-profile snapshot store)
+      # and rmtree's it whenever a browser session starts with browser.use_real_profile off. A durable
+      # profile there is deleted on the bot's next browser call (happened 2026-11-27).
+      - /mnt/spool/apps/data/hermes/gateway/bot-browser-profile:/opt/data/bot-browser-profile
     healthcheck:
       test: ["CMD", "docker", "info"]
       interval: 15s
