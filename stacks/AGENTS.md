@@ -97,3 +97,31 @@ as `ghcr.io/salekseev/hermes-gateway`), not from a volume or an init container.
 should show `mode=local_external, api_url=http://hindsight:8888/api, bank=hermes`, and no new
 `hindsight_client` errors in `errors.log`. The server answers `GET http://hindsight:8888/api/version`
 without a key.
+
+## Hermes: sandbox bind mounts resolve inside dind, not on the gateway
+
+**Symptoms.** `errors.log` warns "Docker backend is enabled for the messaging gateway but no explicit
+host-visible output mount", the sandbox's `/root/.hermes/skills` is empty, and files the agent writes
+to `/output` never reach Slack or the dashboard.
+
+**Cause.** With `terminal.backend: docker` the gateway runs `docker run -v /opt/data/skills:...` against
+the **dind** daemon (`DOCKER_HOST=tcp://dind:2375`). A bind source is a path on the daemon's host, so it
+is looked up in the dind container's filesystem, where `/opt/data` did not exist. Docker silently
+creates the missing path as an empty directory.
+
+**Fix.** `stacks/hermes.yaml` mounts the needed gateway directories into `hermes-dind` at the same
+`/opt/data/...` paths (skills, cache, browser_screenshots, images, attachments, composer-pastes), so a
+bind source means the same thing on both sides. Output goes through a `docker_volumes` entry in
+`/opt/data/config.yaml`:
+
+```sh
+docker exec -u 1000:1000 -e HERMES_HOME=/opt/data hermes-gateway \
+  hermes config set terminal.docker_volumes '["/opt/data/cache/documents:/output"]'
+```
+
+If Hermes starts mounting another `/opt/data` directory (the log line is `Docker: mounting ... dir
+/opt/data/<x>`), add it to the `dind` volumes. Check with
+`docker exec hermes-dind ls /opt/data`: it should list those directories, not fail.
+
+**Disk quota warning.** "Docker storage driver does not support per-container disk limits" is harmless:
+dind's `overlay2` has no XFS project quota. `terminal.container_disk: 0` stops the warning.
